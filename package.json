@@ -1,5 +1,5 @@
 {
-  "name": "milagecalc",
+  "name": "openroad",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -27,14 +27,21 @@
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
     "jspdf": "^4.2.0",
+    "leaflet": "^1.9.4",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "workbox-cacheable-response": "^7.4.0",
+    "workbox-expiration": "^7.4.0",
+    "workbox-precaching": "^7.4.0",
+    "workbox-routing": "^7.4.0",
+    "workbox-strategies": "^7.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
     "@tailwindcss/vite": "^4.2.1",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^24.10.1",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.7",

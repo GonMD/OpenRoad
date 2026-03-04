@@ -5,22 +5,26 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/openroad/",
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
       manifest: {
-        name: "MileageCalc",
-        short_name: "MileageCalc",
+        name: "OpenRoad",
+        short_name: "OpenRoad",
         description:
           "Automatic mileage tracker for tax deductions and benefits",
-        theme_color: "#1d4ed8",
-        background_color: "#0f172a",
+        theme_color: "#00497d",
+        background_color: "#0f1117",
         display: "standalone",
         orientation: "portrait",
-        start_url: "/",
+        start_url: "/openroad/",
         icons: [
           {
             src: "pwa-192x192.png",
@@ -40,24 +44,10 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      // injectManifest: runtime caching is defined in src/sw.ts directly.
+      // Only specify which files to precache here.
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts-cache",
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
       },
     }),
   ],

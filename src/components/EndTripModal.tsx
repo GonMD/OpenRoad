@@ -2,10 +2,9 @@ import { useState, useRef, useCallback } from "react";
 import type { TripPurpose } from "../types/index.js";
 import { TRIP_PURPOSE_LABELS } from "../types/index.js";
 import { formatMiles } from "../lib/distance.js";
+import { OdometerCapture } from "./OdometerCapture.js";
 
 // ─── Web Speech API ambient types ────────────────────────────────────────────
-// The standard lib doesn't include SpeechRecognition for all targets, so we
-// declare only what we actually use rather than casting to `any`.
 
 interface SpeechRecognitionEvent extends Event {
   readonly results: SpeechRecognitionResultList;
@@ -26,19 +25,17 @@ interface SpeechRecognitionInstance extends EventTarget {
   onend: (() => void) | null;
 }
 
-// Resolve the constructor from either the standard or webkit-prefixed name
 function getSpeechRecognitionCtor():
   | (new () => SpeechRecognitionInstance)
   | null {
   const w = window as unknown as Record<string, unknown>;
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-  if (typeof Ctor === "function") {
+  if (typeof Ctor === "function")
     return Ctor as new () => SpeechRecognitionInstance;
-  }
   return null;
 }
 
-// ─── Common trip notes presets ────────────────────────────────────────────────
+// ─── Common presets ───────────────────────────────────────────────────────────
 
 const COMMON_NOTES = [
   "Client visit",
@@ -57,20 +54,17 @@ const COMMON_NOTES = [
 interface EndTripModalProps {
   miles: number;
   purpose: TripPurpose;
-  onConfirm: (notes: string) => void;
+  onConfirm: (
+    notes: string,
+    odometerEnd: number | null,
+    odometerEndPhoto: string | null,
+  ) => void;
   onDiscard: () => void;
   onCancel: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-/**
- * Bottom-sheet modal shown when the user taps "End Trip".
- * Features:
- *  - Free-text notes textarea
- *  - Common notes dropdown (pre-fills textarea for editing)
- *  - Speech-to-text mic button (appends dictation to existing text)
- */
 export function EndTripModal({
   miles,
   purpose,
@@ -81,45 +75,35 @@ export function EndTripModal({
   const [notes, setNotes] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [odometerReading, setOdometerReading] = useState("");
+  const [odometerPhoto, setOdometerPhoto] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-
   const speechSupported = getSpeechRecognitionCtor() !== null;
-
-  // ── Speech-to-text ──────────────────────────────────────────────────────────
 
   const startListening = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) return;
-
     setSpeechError(null);
     const rec = new Ctor();
     rec.continuous = false;
     rec.interimResults = false;
     rec.lang = navigator.language || "en-US";
-
     rec.onresult = (e: SpeechRecognitionEvent) => {
       const parts: string[] = [];
-      for (const result of Array.from(e.results)) {
+      for (const result of Array.from(e.results))
         parts.push(result[0].transcript);
-      }
       const transcript = parts.join(" ").trim();
-      if (transcript) {
+      if (transcript)
         setNotes((prev) => (prev ? prev + " " + transcript : transcript));
-      }
     };
-
     rec.onerror = (e: SpeechRecognitionErrorEvent) => {
-      if (e.error !== "no-speech") {
-        setSpeechError(e.error);
-      }
+      if (e.error !== "no-speech") setSpeechError(e.error);
       setIsListening(false);
     };
-
     rec.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
     };
-
     recognitionRef.current = rec;
     rec.start();
     setIsListening(true);
@@ -130,59 +114,79 @@ export function EndTripModal({
     setIsListening(false);
   }, []);
 
-  // ── Preset dropdown ─────────────────────────────────────────────────────────
-
   const handlePreset = (value: string) => {
     if (!value) return;
     setNotes(value);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
-    /* Backdrop */
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
-      onClick={onCancel}
-    >
-      {/* Sheet — stop propagation so clicks inside don't close */}
+    <div className="md-bottom-sheet" onClick={onCancel}>
+      <div className="md-bottom-sheet-scrim" />
       <div
-        className="w-full max-w-2xl bg-slate-800 rounded-t-2xl p-5 space-y-4"
+        className="md-bottom-sheet-surface"
+        style={{ maxWidth: "600px", width: "100%", margin: "0 auto" }}
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
+        <div className="md-bottom-sheet-handle" />
+
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-100">End Trip</h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "16px",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "1.125rem",
+              fontWeight: 700,
+              color: "var(--md-on-surface)",
+              margin: 0,
+            }}
+          >
+            End Trip
+          </h2>
           <button
             onClick={onCancel}
             aria-label="Cancel"
-            className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--md-on-surface-variant)",
+              cursor: "pointer",
+              fontSize: "1.125rem",
+              lineHeight: 1,
+              padding: "4px",
+              borderRadius: "50%",
+            }}
           >
             ✕
           </button>
         </div>
 
-        {/* Trip summary */}
-        <div className="flex gap-4 text-sm text-slate-300">
-          <span>
-            <span className="text-slate-500">Distance: </span>
-            <span className="font-medium text-slate-100">
-              {formatMiles(miles)}
-            </span>
+        {/* Trip summary chips */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
+          <span
+            className="md-chip md-chip-selected"
+            style={{ pointerEvents: "none" }}
+          >
+            {formatMiles(miles)}
           </span>
-          <span>
-            <span className="text-slate-500">Purpose: </span>
-            <span className="font-medium text-slate-100">
-              {TRIP_PURPOSE_LABELS[purpose]}
-            </span>
+          <span
+            className="md-chip md-chip-selected"
+            style={{ pointerEvents: "none" }}
+          >
+            {TRIP_PURPOSE_LABELS[purpose]}
           </span>
         </div>
 
-        {/* Common notes preset dropdown */}
-        <div className="space-y-1">
-          <label className="text-xs text-slate-400" htmlFor="notes-preset">
+        {/* Quick note preset */}
+        <div className="md-field" style={{ marginBottom: "16px" }}>
+          <label className="md-field-label" htmlFor="notes-preset">
             Quick note
           </label>
           <select
@@ -191,7 +195,7 @@ export function EndTripModal({
             onChange={(e) => {
               handlePreset(e.target.value);
             }}
-            className="w-full bg-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="md-select"
           >
             <option value="" disabled>
               Select a common note…
@@ -204,10 +208,16 @@ export function EndTripModal({
           </select>
         </div>
 
-        {/* Notes textarea + mic button */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-slate-400" htmlFor="trip-notes">
+        {/* Notes textarea + mic */}
+        <div className="md-field" style={{ marginBottom: "8px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <label className="md-field-label" htmlFor="trip-notes">
               Notes (optional)
             </label>
             {speechSupported && (
@@ -215,18 +225,32 @@ export function EndTripModal({
                 type="button"
                 onClick={isListening ? stopListening : startListening}
                 aria-label={isListening ? "Stop dictation" : "Dictate notes"}
-                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors ${
-                  isListening
-                    ? "bg-red-700 hover:bg-red-600 text-white animate-pulse"
-                    : "bg-slate-600 hover:bg-slate-500 text-slate-200"
-                }`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  padding: "4px 10px",
+                  borderRadius: "100px",
+                  border: "none",
+                  cursor: "pointer",
+                  backgroundColor: isListening
+                    ? "var(--md-error-container)"
+                    : "var(--md-secondary-container)",
+                  color: isListening
+                    ? "var(--md-on-error-container)"
+                    : "var(--md-on-secondary-container)",
+                  animation: isListening
+                    ? "md-pulse 1.5s ease-in-out infinite"
+                    : "none",
+                }}
               >
-                {/* Mic icon (inline SVG — no extra dependency) */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"
                   fill="currentColor"
-                  className="w-3.5 h-3.5"
+                  style={{ width: "14px", height: "14px" }}
                   aria-hidden="true"
                 >
                   <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4Z" />
@@ -247,31 +271,71 @@ export function EndTripModal({
             onChange={(e) => {
               setNotes(e.target.value);
             }}
-            className="w-full bg-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            className="md-textarea"
           />
           {speechError && (
-            <p className="text-xs text-red-400">
+            <p
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--md-error)",
+                margin: "4px 0 0",
+              }}
+            >
               Microphone error: {speechError}
             </p>
           )}
-          <p className="text-right text-xs text-slate-600">
+          <p
+            style={{
+              textAlign: "right",
+              fontSize: "0.75rem",
+              color: "var(--md-outline)",
+              margin: "4px 0 0",
+            }}
+          >
             {notes.length}/500
           </p>
         </div>
 
+        {/* Odometer end reading */}
+        <div style={{ marginBottom: "8px" }}>
+          <OdometerCapture
+            label="End Odometer Reading (optional)"
+            reading={odometerReading}
+            photo={odometerPhoto}
+            onReadingChange={setOdometerReading}
+            onPhotoChange={setOdometerPhoto}
+          />
+        </div>
+
         {/* Actions */}
-        <div className="flex gap-2 pt-1 pb-safe">
+        <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
           <button
             onClick={onDiscard}
-            className="flex-1 bg-red-900 hover:bg-red-800 text-red-200 text-sm font-medium py-2.5 rounded-lg transition-colors"
+            className="md-btn-error-text"
+            style={{
+              flex: 1,
+              border: "1.5px solid rgba(255,180,171,0.3)",
+              borderRadius: "100px",
+            }}
           >
             Discard
           </button>
           <button
             onClick={() => {
-              onConfirm(notes.trim());
+              const reading =
+                odometerReading.trim() !== ""
+                  ? parseFloat(odometerReading)
+                  : null;
+              const validReading =
+                reading !== null && !isNaN(reading) ? reading : null;
+              onConfirm(notes.trim(), validReading, odometerPhoto);
             }}
-            className="flex-1 bg-green-600 hover:bg-green-500 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+            className="md-btn-filled"
+            style={{
+              flex: 2,
+              backgroundColor: "var(--md-success)",
+              color: "#002110",
+            }}
           >
             Save Trip
           </button>

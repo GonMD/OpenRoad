@@ -8,7 +8,7 @@ import prettierPlugin from "eslint-plugin-prettier";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-  globalIgnores(["dist", "node_modules", ".husky"]),
+  globalIgnores(["dist", "node_modules", ".husky", "src/sw.ts"]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -26,7 +26,9 @@ export default defineConfig([
       ecmaVersion: 2022,
       globals: globals.browser,
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["src/sw.ts"],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },

@@ -4,15 +4,19 @@ import type {
   Zone,
   LocationSample,
   AppSettings,
+  TripTemplate,
+  Vehicle,
 } from "../types/index.js";
 
 // ─── Database Schema ──────────────────────────────────────────────────────────
 
-class MileageCalcDB extends Dexie {
+class OpenRoadDB extends Dexie {
   trips!: EntityTable<Trip, "id">;
   zones!: EntityTable<Zone, "id">;
   locationSamples!: EntityTable<LocationSample, "id">;
   settings!: EntityTable<AppSettings, "id">;
+  templates!: EntityTable<TripTemplate, "id">;
+  vehicles!: EntityTable<Vehicle, "id">;
 
   constructor() {
     super("MileageCalcDB");
@@ -24,10 +28,92 @@ class MileageCalcDB extends Dexie {
       locationSamples: "++id, tripId, timestamp",
       settings: "++id",
     });
+
+    // v2: adds originAddress, destinationAddress, pitStops to trips
+    this.version(2)
+      .stores({
+        // prettier-ignore
+        trips: "++id, purpose, status, originZoneId, destinationZoneId, startedAt, endedAt, createdAt",
+        zones: "++id, name, createdAt",
+        locationSamples: "++id, tripId, timestamp",
+        settings: "++id",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("trips")
+          .toCollection()
+          .modify((trip: Record<string, unknown>) => {
+            if (trip.originAddress === undefined) trip.originAddress = null;
+            if (trip.destinationAddress === undefined)
+              trip.destinationAddress = null;
+            if (trip.pitStops === undefined) trip.pitStops = [];
+          });
+      });
+
+    // v3: adds templates table
+    this.version(3).stores({
+      // prettier-ignore
+      trips: "++id, purpose, status, originZoneId, destinationZoneId, startedAt, endedAt, createdAt",
+      zones: "++id, name, createdAt",
+      locationSamples: "++id, tripId, timestamp",
+      settings: "++id",
+      templates: "++id, name, purpose, createdAt",
+    });
+
+    // v4: adds vehicles table, vehicleId to trips, activeVehicleId to settings
+    this.version(4)
+      .stores({
+        // prettier-ignore
+        trips: "++id, purpose, status, originZoneId, destinationZoneId, vehicleId, startedAt, endedAt, createdAt",
+        zones: "++id, name, createdAt",
+        locationSamples: "++id, tripId, timestamp",
+        settings: "++id",
+        templates: "++id, name, purpose, createdAt",
+        vehicles: "++id, name, createdAt",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("trips")
+          .toCollection()
+          .modify((trip: Record<string, unknown>) => {
+            if (trip.vehicleId === undefined) trip.vehicleId = null;
+          });
+        await tx
+          .table("settings")
+          .toCollection()
+          .modify((s: Record<string, unknown>) => {
+            if (s.activeVehicleId === undefined) s.activeVehicleId = null;
+          });
+      });
+
+    // v5: adds odometerStart, odometerEnd, odometerStartPhoto, odometerEndPhoto to trips
+    this.version(5)
+      .stores({
+        // prettier-ignore
+        trips: "++id, purpose, status, originZoneId, destinationZoneId, vehicleId, startedAt, endedAt, createdAt",
+        zones: "++id, name, createdAt",
+        locationSamples: "++id, tripId, timestamp",
+        settings: "++id",
+        templates: "++id, name, purpose, createdAt",
+        vehicles: "++id, name, createdAt",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("trips")
+          .toCollection()
+          .modify((trip: Record<string, unknown>) => {
+            if (trip.odometerStart === undefined) trip.odometerStart = null;
+            if (trip.odometerEnd === undefined) trip.odometerEnd = null;
+            if (trip.odometerStartPhoto === undefined)
+              trip.odometerStartPhoto = null;
+            if (trip.odometerEndPhoto === undefined)
+              trip.odometerEndPhoto = null;
+          });
+      });
   }
 }
 
-export const db = new MileageCalcDB();
+export const db = new OpenRoadDB();
 
 // ─── Default Settings ─────────────────────────────────────────────────────────
 
@@ -38,6 +124,8 @@ const DEFAULT_SETTINGS: Omit<AppSettings, "id"> = {
   maxAccuracyThresholdMeters: 50,
   minTripDistanceMiles: 0.1,
   locationSampleMaxAgeDays: 90,
+  employerReimbursementCents: 0,
+  activeVehicleId: null,
   updatedAt: new Date(),
 };
 
@@ -80,4 +168,26 @@ export async function updateSettings(
     ...patch,
     updatedAt: new Date(),
   });
+}
+
+/**
+ * Deletes location samples older than the configured age threshold.
+ * Runs on startup; does nothing if locationSampleMaxAgeDays is 0.
+ */
+export async function purgeOldLocationSamples(): Promise<void> {
+  const settings = await getSettings();
+  const maxDays = settings.locationSampleMaxAgeDays;
+  if (maxDays <= 0) return;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - maxDays);
+
+  const all = await db.locationSamples.toArray();
+  const idsToDelete = all
+    .filter((s) => s.timestamp.getTime() < cutoff.getTime())
+    .map((s) => s.id)
+    .filter((id): id is number => id !== undefined);
+  if (idsToDelete.length > 0) {
+    await db.locationSamples.bulkDelete(idsToDelete);
+  }
 }

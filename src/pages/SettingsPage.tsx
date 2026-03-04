@@ -1,15 +1,56 @@
-import { useState, useEffect } from "react";
-import { db, getSettings, updateSettings } from "../db/index.js";
+import { useState, useEffect, useRef } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import {
+  db,
+  getSettings,
+  updateSettings,
+  purgeOldLocationSamples,
+} from "../db/index.js";
 import { IRS_RATES } from "../lib/irsRates.js";
-import type { AppSettings, IrsRates } from "../types/index.js";
+import { exportBackup, importBackup } from "../lib/backup.js";
+import { useThemeContext } from "../contexts/ThemeContext.js";
+import { ManageVehiclesModal } from "../components/ManageVehiclesModal.js";
+import { vehicleLabel } from "../lib/vehicleLabel.js";
+import type { AppSettings, IrsRates, Vehicle } from "../types/index.js";
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+      <p className="md-section-header">{title}</p>
+      <div
+        className="md-card"
+        style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saved, setSaved] = useState(false);
-  // Local state for custom rate fields (string so inputs are controlled cleanly)
   const [customBusiness, setCustomBusiness] = useState("");
   const [customMedical, setCustomMedical] = useState("");
   const [customCharity, setCustomCharity] = useState("");
+  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [purgeStatus, setPurgeStatus] = useState<string | null>(null);
+  const [showManageVehicles, setShowManageVehicles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { theme, toggleTheme } = useThemeContext();
+
+  const vehicles =
+    useLiveQuery<Vehicle[]>(
+      () => db.vehicles.orderBy("createdAt").toArray(),
+      [],
+    ) ?? [];
 
   useEffect(() => {
     void getSettings().then((s) => {
@@ -24,8 +65,15 @@ export function SettingsPage() {
 
   if (!settings) {
     return (
-      <div className="flex items-center justify-center h-32">
-        <p className="text-slate-400 text-sm">Loading settings…</p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "128px",
+        }}
+      >
+        <span className="md-spinner" />
       </div>
     );
   }
@@ -64,46 +112,262 @@ export function SettingsPage() {
     await handleChange({ customIrsRates: null });
   };
 
-  // IRS_RATES is typed as non-empty tuple; first element is always defined
   const latestRates = IRS_RATES[0];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-100">Settings</h1>
+    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+      {/* Page header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: "8px",
+          paddingBottom: "8px",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 700,
+            color: "var(--md-on-surface)",
+            margin: 0,
+          }}
+        >
+          Settings
+        </h1>
         {saved && (
-          <span className="text-xs text-green-400 font-medium">Saved</span>
+          <span
+            style={{
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              color: "var(--md-success)",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            ✓ Saved
+          </span>
         )}
       </div>
 
       {/* Distance Unit */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300">Distance Unit</h2>
-        <div className="flex gap-2">
+      <SectionCard title="Distance Unit">
+        <div style={{ display: "flex", gap: "8px" }}>
           {(["miles", "kilometers"] as const).map((unit) => (
             <button
               key={unit}
               onClick={() => void handleChange({ distanceUnit: unit })}
-              className={`flex-1 py-2 text-sm rounded-lg font-medium transition-colors ${
+              className={
                 settings.distanceUnit === unit
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-              }`}
+                  ? "md-btn-filled"
+                  : "md-btn-outlined"
+              }
+              style={{ flex: 1 }}
             >
               {unit.charAt(0).toUpperCase() + unit.slice(1)}
             </button>
           ))}
         </div>
-      </section>
+      </SectionCard>
+
+      {/* Appearance */}
+      <SectionCard title="Appearance">
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+          }}
+        >
+          <div>
+            <span
+              style={{ fontSize: "0.9375rem", color: "var(--md-on-surface)" }}
+            >
+              Light mode
+            </span>
+            <p
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--md-on-surface-variant)",
+                margin: "2px 0 0",
+              }}
+            >
+              {theme === "light" ? "Light theme active" : "Dark theme active"}
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={theme === "light"}
+            onChange={toggleTheme}
+            className="md-switch"
+          />
+        </label>
+      </SectionCard>
+
+      {/* Vehicle */}
+      <SectionCard title="Vehicle">
+        {vehicles.length === 0 ? (
+          <p
+            style={{
+              fontSize: "0.875rem",
+              color: "var(--md-on-surface-variant)",
+              margin: 0,
+            }}
+          >
+            No vehicles added yet.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {/* "None" option */}
+            <button
+              onClick={() => void handleChange({ activeVehicleId: null })}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "10px 12px",
+                borderRadius: "12px",
+                backgroundColor:
+                  settings.activeVehicleId === null
+                    ? "var(--md-primary-container)"
+                    : "var(--md-surface-container-high)",
+                border:
+                  settings.activeVehicleId === null
+                    ? "1.5px solid var(--md-primary)"
+                    : "1.5px solid transparent",
+                cursor: "pointer",
+                width: "100%",
+                textAlign: "left",
+                transition: "background-color 0.15s, border-color 0.15s",
+              }}
+            >
+              <span
+                className="ms icon-20"
+                aria-hidden="true"
+                style={{
+                  color:
+                    settings.activeVehicleId === null
+                      ? "var(--md-primary)"
+                      : "var(--md-on-surface-variant)",
+                  flexShrink: 0,
+                }}
+              >
+                do_not_disturb_on
+              </span>
+              <span
+                style={{
+                  fontSize: "0.9375rem",
+                  fontWeight: 500,
+                  color:
+                    settings.activeVehicleId === null
+                      ? "var(--md-on-primary-container)"
+                      : "var(--md-on-surface)",
+                }}
+              >
+                No vehicle
+              </span>
+              {settings.activeVehicleId === null && (
+                <span
+                  className="ms icon-20"
+                  aria-hidden="true"
+                  style={{ color: "var(--md-primary)", marginLeft: "auto" }}
+                >
+                  check
+                </span>
+              )}
+            </button>
+
+            {vehicles.map((v) => (
+              <button
+                key={v.id}
+                onClick={() =>
+                  void handleChange({ activeVehicleId: v.id ?? null })
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "10px 12px",
+                  borderRadius: "12px",
+                  backgroundColor:
+                    settings.activeVehicleId === v.id
+                      ? "var(--md-primary-container)"
+                      : "var(--md-surface-container-high)",
+                  border:
+                    settings.activeVehicleId === v.id
+                      ? "1.5px solid var(--md-primary)"
+                      : "1.5px solid transparent",
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "left",
+                  transition: "background-color 0.15s, border-color 0.15s",
+                }}
+              >
+                <span
+                  className="ms icon-20"
+                  aria-hidden="true"
+                  style={{
+                    color:
+                      settings.activeVehicleId === v.id
+                        ? "var(--md-primary)"
+                        : "var(--md-on-surface-variant)",
+                    flexShrink: 0,
+                  }}
+                >
+                  directions_car
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontWeight: settings.activeVehicleId === v.id ? 600 : 400,
+                      fontSize: "0.9375rem",
+                      color:
+                        settings.activeVehicleId === v.id
+                          ? "var(--md-on-primary-container)"
+                          : "var(--md-on-surface)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {vehicleLabel(v)}
+                  </p>
+                </div>
+                {settings.activeVehicleId === v.id && (
+                  <span
+                    className="ms icon-20"
+                    aria-hidden="true"
+                    style={{ color: "var(--md-primary)", flexShrink: 0 }}
+                  >
+                    check
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => {
+            setShowManageVehicles(true);
+          }}
+          className="md-btn-tonal"
+          style={{ width: "100%", gap: "8px" }}
+        >
+          <span className="ms icon-20" aria-hidden="true">
+            garage
+          </span>
+          Manage Vehicles
+        </button>
+      </SectionCard>
 
       {/* GPS Accuracy */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300">GPS Accuracy</h2>
-        <div className="space-y-1">
-          <label
-            className="text-xs text-slate-400"
-            htmlFor="accuracy-threshold"
-          >
+      <SectionCard title="GPS Accuracy">
+        <div className="md-field">
+          <label className="md-field-label" htmlFor="accuracy-threshold">
             Ignore readings worse than (meters)
           </label>
           <input
@@ -117,29 +381,37 @@ export function SettingsPage() {
                 maxAccuracyThresholdMeters: parseInt(e.target.value, 10),
               })
             }
-            className="w-full bg-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="md-input"
           />
         </div>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+          }}
+        >
+          <span
+            style={{ fontSize: "0.9375rem", color: "var(--md-on-surface)" }}
+          >
+            Show accuracy warnings
+          </span>
           <input
             type="checkbox"
             checked={settings.showAccuracyWarnings}
             onChange={(e) =>
               void handleChange({ showAccuracyWarnings: e.target.checked })
             }
-            className="rounded"
+            className="md-switch"
           />
-          <span className="text-sm text-slate-300">Show accuracy warnings</span>
         </label>
-      </section>
+      </SectionCard>
 
       {/* Minimum Trip Distance */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300">
-          Minimum Trip Distance
-        </h2>
-        <div className="space-y-1">
-          <label className="text-xs text-slate-400" htmlFor="min-trip-distance">
+      <SectionCard title="Minimum Trip Distance">
+        <div className="md-field">
+          <label className="md-field-label" htmlFor="min-trip-distance">
             Auto-discard trips shorter than (miles)
           </label>
           <input
@@ -154,150 +426,207 @@ export function SettingsPage() {
                 minTripDistanceMiles: parseFloat(e.target.value),
               })
             }
-            className="w-full bg-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="md-input"
           />
         </div>
-        <p className="text-xs text-slate-500">
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--md-on-surface-variant)",
+            margin: 0,
+          }}
+        >
           Trips under this distance are silently discarded when ended.
         </p>
-      </section>
+      </SectionCard>
 
       {/* IRS Rates */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">
-            IRS Mileage Rates
-          </h2>
+      <SectionCard title="IRS Mileage Rates">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.8125rem",
+              color: "var(--md-on-surface-variant)",
+              margin: 0,
+            }}
+          >
+            Built-in rates ({latestRates.year})
+          </p>
           {settings.customIrsRates && (
-            <span className="text-xs bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full">
+            <span
+              className="md-badge"
+              style={{ backgroundColor: "#2d1600", color: "#ffb870" }}
+            >
               Custom
             </span>
           )}
         </div>
 
-        {/* Built-in rates display */}
-        <div className="space-y-1">
-          <p className="text-xs text-slate-500">
-            Built-in rates ({latestRates.year})
-          </p>
-          <div className="grid grid-cols-3 gap-2 text-xs text-slate-400">
-            <div>
-              <p>Business</p>
-              <p className="text-slate-100 font-medium">
-                {latestRates.business}¢/mi
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: "12px",
+          }}
+        >
+          {(["business", "medical", "charity"] as const).map((key) => (
+            <div
+              key={key}
+              className="md-card-filled"
+              style={{ textAlign: "center", padding: "12px 8px" }}
+            >
+              <p
+                style={{
+                  fontSize: "0.6875rem",
+                  color: "var(--md-on-surface-variant)",
+                  margin: "0 0 4px",
+                  textTransform: "capitalize",
+                }}
+              >
+                {key}
+              </p>
+              <p
+                style={{
+                  fontSize: "1rem",
+                  fontWeight: 700,
+                  color: "var(--md-on-surface)",
+                  margin: 0,
+                }}
+              >
+                {latestRates[key]}¢
               </p>
             </div>
-            <div>
-              <p>Medical</p>
-              <p className="text-slate-100 font-medium">
-                {latestRates.medical}¢/mi
-              </p>
-            </div>
-            <div>
-              <p>Charity</p>
-              <p className="text-slate-100 font-medium">
-                {latestRates.charity}¢/mi
-              </p>
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Custom rate override inputs */}
-        <div className="space-y-2 pt-1">
-          <p className="text-xs text-slate-400">
-            Override with custom rates (cents per mile):
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="space-y-1">
-              <label
-                className="text-xs text-slate-500"
-                htmlFor="custom-business"
-              >
-                Business
+        <hr className="md-divider" />
+
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--md-on-surface-variant)",
+            margin: 0,
+          }}
+        >
+          Override with custom rates (¢/mi):
+        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: "12px",
+          }}
+        >
+          {[
+            {
+              id: "custom-business",
+              label: "Business",
+              value: customBusiness,
+              setter: setCustomBusiness,
+            },
+            {
+              id: "custom-medical",
+              label: "Medical",
+              value: customMedical,
+              setter: setCustomMedical,
+            },
+            {
+              id: "custom-charity",
+              label: "Charity",
+              value: customCharity,
+              setter: setCustomCharity,
+            },
+          ].map(({ id, label, value, setter }) => (
+            <div key={id} className="md-field">
+              <label className="md-field-label" htmlFor={id}>
+                {label}
               </label>
               <input
-                id="custom-business"
+                id={id}
                 type="number"
                 min="0"
                 max="200"
                 step="0.5"
-                placeholder={String(latestRates.business)}
-                value={customBusiness}
+                placeholder={String(
+                  latestRates[
+                    id.replace("custom-", "") as
+                      | "business"
+                      | "medical"
+                      | "charity"
+                  ],
+                )}
+                value={value}
                 onChange={(e) => {
-                  setCustomBusiness(e.target.value);
+                  setter(e.target.value);
                 }}
-                className="w-full bg-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                className="md-input"
               />
             </div>
-            <div className="space-y-1">
-              <label
-                className="text-xs text-slate-500"
-                htmlFor="custom-medical"
-              >
-                Medical
-              </label>
-              <input
-                id="custom-medical"
-                type="number"
-                min="0"
-                max="200"
-                step="0.5"
-                placeholder={String(latestRates.medical)}
-                value={customMedical}
-                onChange={(e) => {
-                  setCustomMedical(e.target.value);
-                }}
-                className="w-full bg-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                className="text-xs text-slate-500"
-                htmlFor="custom-charity"
-              >
-                Charity
-              </label>
-              <input
-                id="custom-charity"
-                type="number"
-                min="0"
-                max="200"
-                step="0.5"
-                placeholder={String(latestRates.charity)}
-                value={customCharity}
-                onChange={(e) => {
-                  setCustomCharity(e.target.value);
-                }}
-                className="w-full bg-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={() => void handleSaveCustomRates()}
-              className="flex-1 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-            >
-              Save Custom Rates
-            </button>
-            {settings.customIrsRates && (
-              <button
-                onClick={() => void handleClearCustomRates()}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium py-2 rounded-lg transition-colors"
-              >
-                Use Built-in
-              </button>
-            )}
-          </div>
+          ))}
         </div>
-      </section>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => void handleSaveCustomRates()}
+            className="md-btn-filled"
+            style={{ flex: 1 }}
+          >
+            Save Custom Rates
+          </button>
+          {settings.customIrsRates && (
+            <button
+              onClick={() => void handleClearCustomRates()}
+              className="md-btn-outlined"
+              style={{ flex: 1 }}
+            >
+              Use Built-in
+            </button>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* Employer Reimbursement */}
+      <SectionCard title="Employer Reimbursement">
+        <div className="md-field">
+          <label className="md-field-label" htmlFor="employer-rate">
+            Employer rate (cents per mile, 0 = not tracked)
+          </label>
+          <input
+            id="employer-rate"
+            type="number"
+            min="0"
+            max="200"
+            step="0.5"
+            value={settings.employerReimbursementCents}
+            onChange={(e) =>
+              void handleChange({
+                employerReimbursementCents: parseFloat(e.target.value),
+              })
+            }
+            className="md-input"
+          />
+        </div>
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--md-on-surface-variant)",
+            margin: 0,
+          }}
+        >
+          Reports will show the gap between the IRS standard rate and your
+          employer's rate.
+        </p>
+      </SectionCard>
 
       {/* Location Data Retention */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300">
-          Location Data Retention
-        </h2>
-        <div className="space-y-1">
-          <label className="text-xs text-slate-400" htmlFor="sample-max-age">
+      <SectionCard title="Location Data Retention">
+        <div className="md-field">
+          <label className="md-field-label" htmlFor="sample-max-age">
             Delete GPS breadcrumbs older than (days, 0 = keep forever)
           </label>
           <input
@@ -312,14 +641,123 @@ export function SettingsPage() {
                 locationSampleMaxAgeDays: parseInt(e.target.value, 10),
               })
             }
-            className="w-full bg-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="md-input"
           />
         </div>
-      </section>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            onClick={() => {
+              void purgeOldLocationSamples().then(() => {
+                setPurgeStatus("Purged.");
+                setTimeout(() => {
+                  setPurgeStatus(null);
+                }, 2500);
+              });
+            }}
+            className="md-btn-tonal"
+            style={{ flex: 1 }}
+          >
+            Purge Now
+          </button>
+          {purgeStatus && (
+            <span
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--md-success)",
+                fontWeight: 600,
+              }}
+            >
+              ✓ {purgeStatus}
+            </span>
+          )}
+        </div>
+      </SectionCard>
 
-      {/* Data */}
-      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-300">Data</h2>
+      {/* Backup & Restore */}
+      <SectionCard title="Backup & Restore">
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            color: "var(--md-on-surface-variant)",
+            margin: 0,
+          }}
+        >
+          Export all trips, zones, and settings to a JSON file, or restore from
+          a previous backup.
+        </p>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={() => void exportBackup()}
+            className="md-btn-tonal"
+            style={{ flex: 1 }}
+          >
+            Export Backup
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="md-btn-outlined"
+            style={{ flex: 1 }}
+          >
+            Restore Backup
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setRestoreStatus(null);
+            setRestoreError(null);
+            if (
+              !window.confirm(
+                "Restoring will overwrite ALL current data. Continue?",
+              )
+            ) {
+              e.target.value = "";
+              return;
+            }
+            void importBackup(file)
+              .then((msg) => {
+                setRestoreStatus(msg);
+                e.target.value = "";
+              })
+              .catch((err: unknown) => {
+                setRestoreError(
+                  err instanceof Error ? err.message : "Restore failed.",
+                );
+                e.target.value = "";
+              });
+          }}
+        />
+        {restoreStatus && (
+          <p
+            style={{
+              fontSize: "0.8125rem",
+              color: "var(--md-success)",
+              margin: 0,
+            }}
+          >
+            ✓ {restoreStatus}
+          </p>
+        )}
+        {restoreError && (
+          <p
+            style={{
+              fontSize: "0.8125rem",
+              color: "var(--md-error)",
+              margin: 0,
+            }}
+          >
+            {restoreError}
+          </p>
+        )}
+      </SectionCard>
+
+      {/* Danger zone */}
+      <SectionCard title="Data">
         <button
           onClick={() => {
             if (
@@ -334,15 +772,36 @@ export function SettingsPage() {
               ]);
             }
           }}
-          className="w-full bg-red-900 hover:bg-red-800 text-red-200 text-sm font-medium py-2.5 rounded-lg transition-colors"
+          className="md-btn-error-text"
+          style={{
+            width: "100%",
+            border: "1.5px solid rgba(255,180,171,0.3)",
+            borderRadius: "100px",
+            padding: "12px",
+          }}
         >
           Clear All Data
         </button>
-      </section>
+      </SectionCard>
 
-      <p className="text-xs text-center text-slate-600">
-        MileageCalc v0.1.0 — All data stored locally on this device.
+      <p
+        style={{
+          fontSize: "0.75rem",
+          textAlign: "center",
+          color: "var(--md-outline)",
+          padding: "16px 0",
+        }}
+      >
+        OpenRoad v0.1.0 — All data stored locally on this device.
       </p>
+
+      {showManageVehicles && (
+        <ManageVehiclesModal
+          onClose={() => {
+            setShowManageVehicles(false);
+          }}
+        />
+      )}
     </div>
   );
 }

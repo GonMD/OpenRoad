@@ -49,6 +49,33 @@ export interface LocationSample {
   timestamp: Date;
 }
 
+// ─── Pit Stop ─────────────────────────────────────────────────────────────────
+
+export interface PitStop {
+  /** Zone id if auto-detected, null if manual */
+  zoneId: number | null;
+  /** Zone name or manual label */
+  label: string;
+  /** Miles from trip origin at time of stop */
+  milesFromOrigin: number;
+  /** ISO timestamp of the stop */
+  arrivedAt: string;
+  /** Reverse-geocoded address (resolved async after trip ends) */
+  address: string | null;
+}
+
+// ─── Vehicle Profile ──────────────────────────────────────────────────────────
+
+export interface Vehicle {
+  id?: number;
+  name: string;
+  year: number | null;
+  make: string;
+  model: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Trip ─────────────────────────────────────────────────────────────────────
 
 export type TripStatus = "in_progress" | "completed" | "discarded";
@@ -66,6 +93,22 @@ export interface Trip {
   /** Computed total distance in miles */
   distanceMiles: number;
   notes: string;
+  /** Reverse-geocoded start address (resolved async after trip ends) */
+  originAddress: string | null;
+  /** Reverse-geocoded end address (resolved async after trip ends) */
+  destinationAddress: string | null;
+  /** Pit stops along the route, sorted by milesFromOrigin ascending */
+  pitStops: PitStop[];
+  /** Vehicle profile id (null = unassigned) */
+  vehicleId: number | null;
+  /** Odometer reading at trip start (user-entered, in the user's preferred unit) */
+  odometerStart: number | null;
+  /** Odometer reading at trip end (user-entered, in the user's preferred unit) */
+  odometerEnd: number | null;
+  /** Base64-encoded JPEG photo of odometer at start (compressed) */
+  odometerStartPhoto: string | null;
+  /** Base64-encoded JPEG photo of odometer at end (compressed) */
+  odometerEndPhoto: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -87,6 +130,10 @@ export interface AppSettings {
   minTripDistanceMiles: number;
   /** Location samples older than this many days are purged on startup (0 = never) */
   locationSampleMaxAgeDays: number;
+  /** Employer reimbursement rate in cents per mile (0 = disabled) */
+  employerReimbursementCents: number;
+  /** The currently active vehicle profile id (null = no vehicle selected) */
+  activeVehicleId: number | null;
   updatedAt: Date;
 }
 
@@ -98,6 +145,19 @@ export interface ReportFilter {
   purposes: TripPurpose[];
   minMiles: number | null;
   maxMiles: number | null;
+}
+
+// ─── Trip Template ────────────────────────────────────────────────────────────
+
+export interface TripTemplate {
+  id?: number;
+  /** Display name shown on the quick-start button */
+  name: string;
+  purpose: TripPurpose;
+  /** Pre-filled notes when a trip is started from this template */
+  notes: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────

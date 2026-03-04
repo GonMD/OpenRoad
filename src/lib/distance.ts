@@ -1,4 +1,4 @@
-import type { Coordinate } from "../types/index.js";
+import type { Coordinate, DistanceUnit } from "../types/index.js";
 
 // ─── Haversine distance ───────────────────────────────────────────────────────
 
@@ -46,12 +46,25 @@ export function distanceMiles(a: Coordinate, b: Coordinate): number {
 
 /**
  * Returns the total path distance in miles by summing segment distances.
+ *
+ * Fallback rule: if fewer than 3 breadcrumbs are available, use straight-line
+ * (haversine) distance between the first and last point rather than returning 0.
  */
 export function pathDistanceMiles(points: Coordinate[]): number {
-  if (points.length < 2) return 0;
+  if (points.length === 0) return 0;
+  if (points.length === 1) return 0;
+
+  // Straight-line fallback for sparse breadcrumb collections
+  if (points.length < 3) {
+    const [first, last] = [points[0], points[points.length - 1]] as [
+      Coordinate,
+      Coordinate,
+    ];
+    return distanceMiles(first, last);
+  }
+
   let total = 0;
   for (let i = 1; i < points.length; i++) {
-    // Destructure to get non-undefined references within loop bounds
     const [prev, curr] = [points[i - 1], points[i]] as [Coordinate, Coordinate];
     total += distanceMiles(prev, curr);
   }
@@ -95,4 +108,19 @@ export function formatMiles(miles: number, decimals = 1): string {
  */
 export function formatKilometers(km: number, decimals = 1): string {
   return `${km.toFixed(decimals)} km`;
+}
+
+/**
+ * Formats a distance (given in miles) using the user's preferred unit.
+ * Converts to km when unit is "kilometers".
+ */
+export function formatDistance(
+  miles: number,
+  unit: DistanceUnit,
+  decimals = 1,
+): string {
+  if (unit === "kilometers") {
+    return formatKilometers(milesToKilometers(miles), decimals);
+  }
+  return formatMiles(miles, decimals);
 }
