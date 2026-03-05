@@ -1,73 +1,95 @@
-# React + TypeScript + Vite
+# OpenRoad
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Progressive Web App (PWA) for automatically tracking vehicle mileage using GPS. Built for IRS standard mileage deductions and employer reimbursement programs. No app store required.
 
-Currently, two official plugins are available:
+## Install on Your Device
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Android
 
-## React Compiler
+1. Open the app URL in **Chrome**
+2. Tap the browser menu (three dots) → **Add to Home Screen**
+3. Tap **Install**
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### iOS
 
-## Expanding the ESLint configuration
+1. Open the app URL in **Safari**
+2. Tap the **Share** button → **Add to Home Screen**
+3. Tap **Add**
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+> **iOS note:** Safari does not support background location in PWAs. Keep the screen active while a trip is in progress.
 
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Run Locally (Development)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+**Prerequisites:** Node.js 18+
+
+```bash
+git clone <repo-url>
+cd milageCalc
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+To build for production:
 
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```bash
+npm run build
+npm run preview
 ```
+
+---
+
+## How to Use
+
+### 1. Set Up Zones
+
+Zones are GPS locations you frequently visit (home, office, etc.). The app uses them to automatically detect when a trip starts or ends.
+
+- Go to the **Zones** tab
+- Tap the **+** button to add a zone
+- Enter a name and allow the app to use your current location, or search for an address
+- Adjust the radius if needed (default: 200m)
+
+### 2. Track a Trip
+
+Trips are tracked automatically when you leave a zone and end when you enter another.
+
+- **Automatic:** Leave a zone → trip starts. Arrive at a zone → trip ends.
+- **Manual:** Use the controls on the **Dashboard** tab to start or end a trip at any time.
+- When a trip ends, confirm its purpose: **Business**, **Medical**, **Charity**, or **Personal**.
+
+### 3. View Trip History
+
+- Go to the **Trips** tab to see all recorded trips with distance and purpose badges.
+- Tap a trip to edit its details or notes.
+
+### 4. Export Reports
+
+- Go to the **Reports** tab
+- Filter by date range or purpose
+- Export as **CSV** or **PDF** for tax filing or expense submission
+
+### 5. Settings
+
+- Go to the **Settings** tab to configure:
+  - Distance unit (miles or kilometers)
+  - GPS accuracy threshold
+  - Minimum trip distance (shorter trips are discarded)
+  - Employer reimbursement rate
+  - Data backup and restore
+
+---
+
+## IRS Mileage Rates (built-in)
+
+| Year | Business | Medical | Charity |
+| ---- | -------- | ------- | ------- |
+| 2025 | 70¢/mi   | 21¢/mi  | 14¢/mi  |
+| 2024 | 67¢/mi   | 21¢/mi  | 14¢/mi  |
+| 2023 | 65.5¢/mi | 22¢/mi  | 14¢/mi  |
+| 2022 | 58.5¢/mi | 18¢/mi  | 14¢/mi  |
+
+Deduction values are calculated automatically in the Reports tab.
