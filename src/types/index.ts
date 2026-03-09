@@ -202,6 +202,23 @@ export interface TripTemplate {
   updatedAt: Date;
 }
 
+// ─── Saved Route ──────────────────────────────────────────────────────────────
+
+export interface SavedRouteStop {
+  displayName: string;
+  lat: number;
+  lng: number;
+}
+
+export interface SavedRoute {
+  id?: number;
+  name: string;
+  stops: SavedRouteStop[];
+  preferRightTurns: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export type ExportFormat = "csv" | "pdf";

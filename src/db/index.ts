@@ -6,6 +6,7 @@ import type {
   AppSettings,
   TripTemplate,
   Vehicle,
+  SavedRoute,
 } from "../types/index.js";
 
 // ─── Database Schema ──────────────────────────────────────────────────────────
@@ -17,6 +18,7 @@ class OpenRoadDB extends Dexie {
   settings!: EntityTable<AppSettings, "id">;
   templates!: EntityTable<TripTemplate, "id">;
   vehicles!: EntityTable<Vehicle, "id">;
+  savedRoutes!: EntityTable<SavedRoute, "id">;
 
   constructor() {
     super("MileageCalcDB");
@@ -155,6 +157,18 @@ class OpenRoadDB extends Dexie {
             if (s.dimLevel === undefined) s.dimLevel = 0.85;
           });
       });
+
+    // v8: adds savedRoutes table
+    this.version(8).stores({
+      // prettier-ignore
+      trips: "++id, purpose, status, originZoneId, destinationZoneId, vehicleId, startedAt, endedAt, createdAt",
+      zones: "++id, name, createdAt",
+      locationSamples: "++id, tripId, timestamp",
+      settings: "++id",
+      templates: "++id, name, purpose, createdAt",
+      vehicles: "++id, name, createdAt",
+      savedRoutes: "++id, name, createdAt",
+    });
   }
 }
 

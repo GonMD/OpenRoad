@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useNavigate } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { geocodeAddress } from "../lib/geocode.js";
@@ -24,7 +25,7 @@ import {
   formatDistanceKm,
 } from "../lib/routing.js";
 import type { RouteResult } from "../lib/routing.js";
-import type { Coordinate, Zone } from "../types/index.js";
+import type { Coordinate, Zone, SavedRoute } from "../types/index.js";
 import { db } from "../db/index.js";
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
@@ -56,6 +57,7 @@ function blankStop(): Stop {
 }
 
 const EMPTY_ZONES: Zone[] = [];
+const EMPTY_SAVED_ROUTES: SavedRoute[] = [];
 
 // ─── Address input with autocomplete ─────────────────────────────────────────
 
@@ -524,16 +526,25 @@ function RouteMap({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function RoutePlannerPage() {
+  const navigate = useNavigate();
   const [stops, setStops] = useState<Stop[]>([blankStop(), blankStop()]);
   const [preferRightTurns, setPreferRightTurns] = useState(true);
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [routeName, setRouteName] = useState("");
 
   const zones =
     useLiveQuery<Zone[]>(() => db.zones.orderBy("name").toArray(), []) ??
     EMPTY_ZONES;
+
+  const savedRoutes =
+    useLiveQuery<SavedRoute[]>(
+      () => db.savedRoutes.orderBy("createdAt").reverse().toArray(),
+      [],
+    ) ?? EMPTY_SAVED_ROUTES;
 
   // Debounced geocode search when query changes
   const searchTimers = useRef<
@@ -600,6 +611,58 @@ export function RoutePlannerPage() {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+  }, []);
+
+  const handleSaveRoute = useCallback(
+    (andNavigateHome = false) => {
+      const name = routeName.trim() || "My Route";
+      const stopsData = stops.flatMap((s) =>
+        s.geocoded !== null
+          ? [
+              {
+                displayName: s.geocoded.displayName,
+                lat: s.geocoded.lat,
+                lng: s.geocoded.lng,
+              },
+            ]
+          : [],
+      );
+      void db.savedRoutes
+        .add({
+          name,
+          stops: stopsData,
+          preferRightTurns,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .then(() => {
+          setShowSaveInput(false);
+          setRouteName("");
+          if (andNavigateHome) void navigate("/");
+        });
+    },
+    [routeName, stops, preferRightTurns, navigate],
+  );
+
+  const handleLoadRoute = useCallback((sr: SavedRoute) => {
+    const newStops: Stop[] = sr.stops.map((s) => ({
+      id: newStopId(),
+      query: s.displayName,
+      suggestions: [],
+      geocoded: { displayName: s.displayName, lat: s.lat, lng: s.lng },
+      searching: false,
+    }));
+    // Ensure at least 2 stops
+    while (newStops.length < 2) newStops.push(blankStop());
+    setStops(newStops);
+    setPreferRightTurns(sr.preferRightTurns);
+    setRoute(null);
+    setError(null);
+  }, []);
+
+  const handleDeleteRoute = useCallback((id: number | undefined) => {
+    if (id === undefined) return;
+    void db.savedRoutes.delete(id);
   }, []);
 
   const addStop = () => {
@@ -714,6 +777,102 @@ export function RoutePlannerPage() {
           Plan multi-stop routes · powered by OpenStreetMap
         </p>
       </header>
+
+      {/* Saved routes */}
+      {savedRoutes.length > 0 && (
+        <div className="md-card" style={{ padding: "12px 16px" }}>
+          <p
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              color: "var(--md-on-surface-variant)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              margin: "0 0 10px",
+            }}
+          >
+            Saved Routes
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {savedRoutes.map((sr) => (
+              <div
+                key={sr.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "8px 10px",
+                  borderRadius: "10px",
+                  backgroundColor: "var(--md-surface-container-high)",
+                }}
+              >
+                <span
+                  className="ms icon-18"
+                  aria-hidden="true"
+                  style={{ color: "var(--md-primary)", flexShrink: 0 }}
+                >
+                  route
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: "var(--md-on-surface)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {sr.name}
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.75rem",
+                      color: "var(--md-on-surface-variant)",
+                    }}
+                  >
+                    {sr.stops.length} stops
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLoadRoute(sr);
+                  }}
+                  className="md-btn-tonal"
+                  style={{ padding: "6px 14px", fontSize: "0.8125rem" }}
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteRoute(sr.id);
+                  }}
+                  aria-label="Delete saved route"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--md-on-surface-variant)",
+                    cursor: "pointer",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span className="ms icon-18" aria-hidden="true">
+                    delete_outline
+                  </span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stop list */}
       <div
@@ -941,6 +1100,106 @@ export function RoutePlannerPage() {
           {calculating ? "Calculating…" : "Calculate Route"}
         </button>
       </div>
+
+      {/* Save / Start row */}
+      {allGeocoded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {showSaveInput && (
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                type="text"
+                value={routeName}
+                onChange={(e) => {
+                  setRouteName(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveRoute();
+                  if (e.key === "Escape") {
+                    setShowSaveInput(false);
+                    setRouteName("");
+                  }
+                }}
+                placeholder="Route name…"
+                className="md-input"
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveRoute();
+                }}
+                className="md-btn-tonal"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveRoute(true);
+                }}
+                className="md-btn-filled"
+                style={{ whiteSpace: "nowrap", gap: "4px" }}
+              >
+                <span className="ms icon-16" aria-hidden="true">
+                  play_arrow
+                </span>
+                Start
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSaveInput(false);
+                  setRouteName("");
+                }}
+                aria-label="Cancel"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--md-on-surface-variant)",
+                  cursor: "pointer",
+                  padding: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <span className="ms icon-20" aria-hidden="true">
+                  close
+                </span>
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSaveInput((v) => !v);
+              }}
+              className="md-btn-outlined"
+              style={{ flex: 1, gap: "6px" }}
+            >
+              <span className="ms icon-18" aria-hidden="true">
+                bookmark_add
+              </span>
+              Save Route
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void navigate("/");
+              }}
+              className="md-btn-filled"
+              style={{ flex: 1, gap: "6px" }}
+            >
+              <span className="ms icon-18" aria-hidden="true">
+                play_arrow
+              </span>
+              Start Driving
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p
