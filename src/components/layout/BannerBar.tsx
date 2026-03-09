@@ -7,10 +7,47 @@ export function BannerBar() {
     dismissIosBanner,
     showAndroidPrompt,
     triggerAndroidInstall,
+    showUpdateBanner,
+    dismissUpdateBanner,
   } = usePwaInstall();
 
   return (
     <>
+      {showUpdateBanner && (
+        <div
+          style={{
+            backgroundColor: "var(--md-primary-container)",
+            color: "var(--md-on-primary-container)",
+            fontSize: "0.8125rem",
+            padding: "10px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
+          <span className="ms icon-16" aria-hidden="true">
+            system_update
+          </span>
+          <span style={{ flex: 1 }}>App updated to the latest version.</span>
+          <button
+            onClick={dismissUpdateBanner}
+            aria-label="Dismiss"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--md-on-primary-container)",
+              cursor: "pointer",
+              padding: "0 4px",
+              fontSize: "1.125rem",
+              lineHeight: 1,
+              opacity: 0.7,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {isOffline && (
         <div
           style={{

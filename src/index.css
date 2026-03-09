@@ -106,6 +106,8 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Prevent the browser's native pull-to-refresh from reloading the PWA */
+    overscroll-behavior: none;
   }
 
   body {
@@ -113,6 +115,8 @@
     color: var(--md-on-surface);
     min-height: 100svh;
     margin: 0;
+    /* Prevent the browser's native pull-to-refresh from reloading the PWA */
+    overscroll-behavior: none;
   }
 
   #root {

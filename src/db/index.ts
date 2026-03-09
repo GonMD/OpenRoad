@@ -110,6 +110,51 @@ class OpenRoadDB extends Dexie {
               trip.odometerEndPhoto = null;
           });
       });
+
+    // v7: adds vehicleType, photo, vin to vehicles
+    this.version(7)
+      .stores({
+        // prettier-ignore
+        trips: "++id, purpose, status, originZoneId, destinationZoneId, vehicleId, startedAt, endedAt, createdAt",
+        zones: "++id, name, createdAt",
+        locationSamples: "++id, tripId, timestamp",
+        settings: "++id",
+        templates: "++id, name, purpose, createdAt",
+        vehicles: "++id, name, createdAt",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("vehicles")
+          .toCollection()
+          .modify((v: Record<string, unknown>) => {
+            if (v.vehicleType === undefined) v.vehicleType = "car";
+            if (v.photo === undefined) v.photo = null;
+            if (v.vin === undefined) v.vin = "";
+          });
+      });
+
+    // v6: adds keepScreenOn, autoDimWhenTracking, dimLevel to settings
+    this.version(6)
+      .stores({
+        // prettier-ignore
+        trips: "++id, purpose, status, originZoneId, destinationZoneId, vehicleId, startedAt, endedAt, createdAt",
+        zones: "++id, name, createdAt",
+        locationSamples: "++id, tripId, timestamp",
+        settings: "++id",
+        templates: "++id, name, purpose, createdAt",
+        vehicles: "++id, name, createdAt",
+      })
+      .upgrade((tx) => {
+        return tx
+          .table("settings")
+          .toCollection()
+          .modify((s: Record<string, unknown>) => {
+            if (s.keepScreenOn === undefined) s.keepScreenOn = true;
+            if (s.autoDimWhenTracking === undefined)
+              s.autoDimWhenTracking = false;
+            if (s.dimLevel === undefined) s.dimLevel = 0.85;
+          });
+      });
   }
 }
 
@@ -126,6 +171,9 @@ const DEFAULT_SETTINGS: Omit<AppSettings, "id"> = {
   locationSampleMaxAgeDays: 90,
   employerReimbursementCents: 0,
   activeVehicleId: null,
+  keepScreenOn: true,
+  autoDimWhenTracking: false,
+  dimLevel: 0.85,
   updatedAt: new Date(),
 };
 

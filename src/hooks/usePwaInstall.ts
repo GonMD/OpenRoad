@@ -18,6 +18,9 @@ export interface PwaInstallState {
   dismissIosBanner: () => void;
   /** True when the device is offline */
   isOffline: boolean;
+  /** True briefly after a new service worker has taken control (app updated) */
+  showUpdateBanner: boolean;
+  dismissUpdateBanner: () => void;
 }
 
 const IOS_BANNER_DISMISSED_KEY = "ios-install-banner-dismissed";
@@ -44,6 +47,7 @@ export function usePwaInstall(): PwaInstallState {
     useState<BeforeInstallPromptEvent | null>(null);
   const [showAndroidPrompt, setShowAndroidPrompt] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [showUpdateBanner, setShowUpdateBanner] = useState(false);
 
   // iOS banner — show once per session if not dismissed
   useEffect(() => {
@@ -65,6 +69,18 @@ export function usePwaInstall(): PwaInstallState {
     window.addEventListener("beforeinstallprompt", handler);
     return () => {
       window.removeEventListener("beforeinstallprompt", handler);
+    };
+  }, []);
+
+  // Detect when a new SW has taken control (= app was just updated)
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const handler = () => {
+      setShowUpdateBanner(true);
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", handler);
+    return () => {
+      navigator.serviceWorker.removeEventListener("controllerchange", handler);
     };
   }, []);
 
@@ -104,5 +120,9 @@ export function usePwaInstall(): PwaInstallState {
     triggerAndroidInstall,
     dismissIosBanner,
     isOffline,
+    showUpdateBanner,
+    dismissUpdateBanner: () => {
+      setShowUpdateBanner(false);
+    },
   };
 }

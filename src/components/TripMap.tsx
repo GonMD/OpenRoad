@@ -31,12 +31,16 @@ export function TripMap({ tripId, fallbackLat, fallbackLng }: TripMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [loading, setLoading] = useState(true);
-  const [empty, setEmpty] = useState(false);
+  const [coords, setCoords] = useState<[number, number][] | null>(null);
 
+  // Derived: no GPS data for this trip
+  const empty = !loading && coords !== null && coords.length === 0;
+
+  // Effect 1: fetch GPS data from IndexedDB
   useEffect(() => {
     let cancelled = false;
 
-    const init = async () => {
+    const fetchData = async () => {
       const samples: LocationSample[] = await db.locationSamples
         .where("tripId")
         .equals(tripId)
@@ -44,99 +48,106 @@ export function TripMap({ tripId, fallbackLat, fallbackLng }: TripMapProps) {
 
       if (cancelled) return;
 
-      setLoading(false);
-
-      const el = containerRef.current;
-      if (!el) return;
-
-      // Build coordinate list
-      const coords: [number, number][] =
+      const c: [number, number][] =
         samples.length > 0
           ? samples.map((s) => [s.lat, s.lng])
           : fallbackLat !== undefined && fallbackLng !== undefined
             ? [[fallbackLat, fallbackLng]]
             : [];
 
-      if (coords.length === 0) {
-        setEmpty(true);
-        return;
-      }
-
-      // Centre on midpoint of the path
-      const lats = coords.map(([lat]) => lat);
-      const lngs = coords.map(([, lng]) => lng);
-      const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-      const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-
-      const map = L.map(el, {
-        center: [centerLat, centerLng],
-        zoom: 14,
-        zoomControl: true,
-        attributionControl: true,
-        scrollWheelZoom: false,
-      });
-
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
-
-      // Polyline (only if ≥ 2 points)
-      if (coords.length >= 2) {
-        L.polyline(coords, {
-          color: "#9ecaff",
-          weight: 3,
-          opacity: 0.85,
-        }).addTo(map);
-      }
-
-      // Start marker (green)
-      const start = coords[0];
-      L.circleMarker(start, {
-        radius: 7,
-        color: "#4caf87",
-        fillColor: "#4caf87",
-        fillOpacity: 1,
-        weight: 2,
-      })
-        .bindTooltip("Start", { permanent: false, direction: "top" })
-        .addTo(map);
-
-      // End marker (red) — only if different from start
-      if (coords.length >= 2) {
-        const end = coords[coords.length - 1];
-        L.circleMarker(end, {
-          radius: 7,
-          color: "#e57373",
-          fillColor: "#e57373",
-          fillOpacity: 1,
-          weight: 2,
-        })
-          .bindTooltip("End", { permanent: false, direction: "top" })
-          .addTo(map);
-      }
-
-      // Fit the map to the polyline bounds
-      if (coords.length >= 2) {
-        const bounds = L.latLngBounds(coords);
-        map.fitBounds(bounds, { padding: [20, 20] });
-      }
-
-      mapRef.current = map;
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 0);
+      setCoords(c);
+      setLoading(false);
     };
 
-    void init();
+    void fetchData();
 
     return () => {
       cancelled = true;
+    };
+  }, [tripId, fallbackLat, fallbackLng]);
+
+  // Effect 2: initialize Leaflet after loading is done and the container div is in the DOM
+  useEffect(() => {
+    if (loading || coords === null) return;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (coords.length === 0) {
+      return;
+    }
+
+    // Centre on midpoint of the path
+    const lats = coords.map(([lat]) => lat);
+    const lngs = coords.map(([, lng]) => lng);
+    const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+
+    const map = L.map(el, {
+      center: [centerLat, centerLng],
+      zoom: 14,
+      zoomControl: true,
+      attributionControl: true,
+      scrollWheelZoom: false,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Polyline (only if ≥ 2 points)
+    if (coords.length >= 2) {
+      L.polyline(coords, {
+        color: "#9ecaff",
+        weight: 3,
+        opacity: 0.85,
+      }).addTo(map);
+    }
+
+    // Start marker (green)
+    const start = coords[0];
+    L.circleMarker(start, {
+      radius: 7,
+      color: "#4caf87",
+      fillColor: "#4caf87",
+      fillOpacity: 1,
+      weight: 2,
+    })
+      .bindTooltip("Start", { permanent: false, direction: "top" })
+      .addTo(map);
+
+    // End marker (red) — only if different from start
+    if (coords.length >= 2) {
+      const end = coords[coords.length - 1];
+      L.circleMarker(end, {
+        radius: 7,
+        color: "#e57373",
+        fillColor: "#e57373",
+        fillOpacity: 1,
+        weight: 2,
+      })
+        .bindTooltip("End", { permanent: false, direction: "top" })
+        .addTo(map);
+    }
+
+    // Fit the map to the polyline bounds
+    if (coords.length >= 2) {
+      const bounds = L.latLngBounds(coords);
+      map.fitBounds(bounds, { padding: [20, 20] });
+    }
+
+    mapRef.current = map;
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 0);
+
+    return () => {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [tripId, fallbackLat, fallbackLng]);
+  }, [loading, coords]);
 
   if (loading) {
     return (

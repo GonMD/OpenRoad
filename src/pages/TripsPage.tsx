@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSettings } from "../db/index.js";
 import { formatDistance } from "../lib/distance.js";
-import { TRIP_PURPOSE_LABELS } from "../types/index.js";
+import { TRIP_PURPOSE_LABELS, VEHICLE_TYPE_ICONS } from "../types/index.js";
 import type {
   Trip,
   TripPurpose,
@@ -29,7 +29,7 @@ function TripCard({
 }: {
   trip: Trip;
   distanceUnit: DistanceUnit;
-  vehicleMap: Map<number, string>;
+  vehicleMap: Map<number, Vehicle>;
   onEdit: (trip: Trip) => void;
 }) {
   const [showMap, setShowMap] = useState(false);
@@ -39,6 +39,22 @@ function TripCard({
     day: "numeric",
     year: "numeric",
   });
+
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+  const startTime = fmt(trip.startedAt);
+  const endTime = trip.endedAt ? fmt(trip.endedAt) : null;
+
+  // Only show end date if it's a different calendar day than the start
+  const endDateStr =
+    trip.endedAt &&
+    trip.endedAt.toDateString() !== trip.startedAt.toDateString()
+      ? trip.endedAt.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : null;
 
   const handleDelete = async () => {
     if (trip.id === undefined) return;
@@ -100,9 +116,13 @@ function TripCard({
                 }}
               >
                 <span className="ms icon-14" aria-hidden="true">
-                  directions_car
+                  {
+                    VEHICLE_TYPE_ICONS[
+                      vehicleMap.get(trip.vehicleId)?.vehicleType ?? "car"
+                    ]
+                  }
                 </span>
-                {vehicleMap.get(trip.vehicleId)}
+                {vehicleMap.get(trip.vehicleId)?.name}
               </span>
             )}
             <span
@@ -112,6 +132,36 @@ function TripCard({
               }}
             >
               {date}
+            </span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--md-on-surface-variant)",
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+              }}
+            >
+              <span className="ms icon-14" aria-hidden="true">
+                schedule
+              </span>
+              {startTime}
+              {endTime && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    style={{ color: "var(--md-outline)" }}
+                  >
+                    →
+                  </span>
+                  {endDateStr && (
+                    <span style={{ color: "var(--md-outline)" }}>
+                      {endDateStr}
+                    </span>
+                  )}
+                  {endTime}
+                </>
+              )}
             </span>
           </div>
           <p
@@ -234,7 +284,7 @@ function TripCard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "4px",
+            gap: "12px",
             flexShrink: 0,
           }}
         >
@@ -348,9 +398,9 @@ export function TripsPage() {
     useLiveQuery<Vehicle[]>(() => db.vehicles.toArray(), []) ?? EMPTY_VEHICLES;
 
   const vehicleMap = useMemo(() => {
-    const m = new Map<number, string>();
+    const m = new Map<number, Vehicle>();
     for (const v of vehicles) {
-      if (v.id !== undefined) m.set(v.id, v.name);
+      if (v.id !== undefined) m.set(v.id, v);
     }
     return m;
   }, [vehicles]);

@@ -66,12 +66,48 @@ export interface PitStop {
 
 // ─── Vehicle Profile ──────────────────────────────────────────────────────────
 
+export type VehicleType =
+  | "car"
+  | "suv"
+  | "truck"
+  | "van"
+  | "box_van"
+  | "motorcycle"
+  | "electric"
+  | "other";
+
+export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
+  car: "Car",
+  suv: "SUV",
+  truck: "Truck",
+  van: "Van",
+  box_van: "Box Van",
+  motorcycle: "Moto",
+  electric: "EV",
+  other: "Other",
+};
+
+export const VEHICLE_TYPE_ICONS: Record<VehicleType, string> = {
+  car: "directions_car",
+  suv: "suv",
+  truck: "pickup_truck",
+  van: "airport_shuttle",
+  box_van: "local_shipping",
+  motorcycle: "motorcycle",
+  electric: "electric_car",
+  other: "directions_car",
+};
+
 export interface Vehicle {
   id?: number;
   name: string;
   year: number | null;
   make: string;
   model: string;
+  vin: string;
+  vehicleType: VehicleType;
+  /** Base64-encoded JPEG photo of the vehicle */
+  photo: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -134,6 +170,12 @@ export interface AppSettings {
   employerReimbursementCents: number;
   /** The currently active vehicle profile id (null = no vehicle selected) */
   activeVehicleId: number | null;
+  /** Prevent screen from sleeping while a trip is in progress (Screen Wake Lock) */
+  keepScreenOn: boolean;
+  /** Automatically apply a dim overlay when tracking starts */
+  autoDimWhenTracking: boolean;
+  /** Opacity of the dim overlay (0.0 = no dim, 0.95 = nearly black) */
+  dimLevel: number;
   updatedAt: Date;
 }
 

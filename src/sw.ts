@@ -19,6 +19,7 @@ import { registerRoute } from "workbox-routing";
 import { CacheFirst } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
+import { clientsClaim } from "workbox-core";
 
 // Augment the global `self` so TypeScript knows it is a ServiceWorkerGlobalScope
 // and carries the workbox-injected __WB_MANIFEST token.
@@ -27,6 +28,20 @@ import { CacheableResponsePlugin } from "workbox-cacheable-response";
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: { url: string; revision: string | null }[];
 };
+
+// ─── Auto-update: skip waiting + claim clients ────────────────────────────────
+// vite-plugin-pwa (registerType: "autoUpdate") sends {type:"SKIP_WAITING"} to
+// the waiting SW.  We must handle it here; without this the new SW sits waiting
+// indefinitely regardless of the registerType setting.
+self.addEventListener("message", (event: ExtendableMessageEvent) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    void self.skipWaiting();
+  }
+});
+
+// Take control of all open tabs immediately after activation so the new
+// JS bundle is served without requiring a manual reload.
+clientsClaim();
 
 // ─── Precache (injected by vite-plugin-pwa at build time) ─────────────────────
 // vite-plugin-pwa replaces the literal `self.__WB_MANIFEST` token at build time.

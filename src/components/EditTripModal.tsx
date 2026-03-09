@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { db } from "../db/index.js";
 import type { Trip, TripPurpose, Vehicle } from "../types/index.js";
-import { TRIP_PURPOSE_LABELS } from "../types/index.js";
+import { TRIP_PURPOSE_LABELS, VEHICLE_TYPE_ICONS } from "../types/index.js";
 import { TripMap } from "./TripMap.js";
 import { OdometerCapture } from "./OdometerCapture.js";
 
@@ -199,7 +199,7 @@ export function EditTripModal({ trip, onClose }: EditTripModalProps) {
               aria-hidden="true"
               style={{ color: "var(--md-outline)", flexShrink: 0 }}
             >
-              directions_car
+              {VEHICLE_TYPE_ICONS[vehicle.vehicleType]}
             </span>
             <span>
               {vehicle.name}

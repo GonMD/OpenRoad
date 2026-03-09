@@ -1,10 +1,51 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/index.js";
-import type { Vehicle } from "../types/index.js";
+import type { Vehicle, VehicleType } from "../types/index.js";
+import { VEHICLE_TYPE_LABELS, VEHICLE_TYPE_ICONS } from "../types/index.js";
+
+const VEHICLE_TYPES: VehicleType[] = [
+  "car",
+  "suv",
+  "truck",
+  "van",
+  "box_van",
+  "motorcycle",
+  "electric",
+  "other",
+];
 
 interface ManageVehiclesModalProps {
   onClose: () => void;
+}
+
+// ─── Image compression (same spec as OdometerCapture) ─────────────────────────
+
+async function compressImageToBase64(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const maxW = 1200;
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(null);
+    };
+    img.src = objectUrl;
+  });
 }
 
 // ─── Form state ───────────────────────────────────────────────────────────────
@@ -14,9 +55,20 @@ interface FormState {
   year: string;
   make: string;
   model: string;
+  vin: string;
+  vehicleType: VehicleType;
+  photo: string | null;
 }
 
-const BLANK_FORM: FormState = { name: "", year: "", make: "", model: "" };
+const BLANK_FORM: FormState = {
+  name: "",
+  year: "",
+  make: "",
+  model: "",
+  vin: "",
+  vehicleType: "car",
+  photo: null,
+};
 
 // ─── Vehicle Row ──────────────────────────────────────────────────────────────
 
@@ -34,6 +86,7 @@ function VehicleRow({
     vehicle.make,
     vehicle.model,
   ].filter(Boolean);
+
   return (
     <div
       style={{
@@ -45,13 +98,29 @@ function VehicleRow({
         backgroundColor: "var(--md-surface-container-high)",
       }}
     >
-      <span
-        className="ms icon-20"
-        aria-hidden="true"
-        style={{ color: "var(--md-primary)", flexShrink: 0 }}
-      >
-        directions_car
-      </span>
+      {/* Photo or icon */}
+      {vehicle.photo ? (
+        <img
+          src={vehicle.photo}
+          alt={vehicle.name}
+          style={{
+            width: "44px",
+            height: "44px",
+            objectFit: "cover",
+            borderRadius: "8px",
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <span
+          className="ms icon-24"
+          aria-hidden="true"
+          style={{ color: "var(--md-primary)", flexShrink: 0 }}
+        >
+          {VEHICLE_TYPE_ICONS[vehicle.vehicleType]}
+        </span>
+      )}
+
       <div style={{ flex: 1, minWidth: 0 }}>
         <p
           style={{
@@ -75,9 +144,11 @@ function VehicleRow({
             }}
           >
             {parts.join(" ")}
+            {vehicle.vin ? ` · ${vehicle.vin}` : ""}
           </p>
         )}
       </div>
+
       <button
         onClick={() => {
           onEdit(vehicle);
@@ -147,6 +218,18 @@ export function ManageVehiclesModal({ onClose }: ManageVehiclesModalProps) {
   const [form, setForm] = useState<FormState>(BLANK_FORM);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const compressed = await compressImageToBase64(file);
+      setForm((f) => ({ ...f, photo: compressed }));
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    },
+    [],
+  );
 
   const openNew = () => {
     setForm(BLANK_FORM);
@@ -160,6 +243,9 @@ export function ManageVehiclesModal({ onClose }: ManageVehiclesModalProps) {
       year: v.year !== null ? String(v.year) : "",
       make: v.make,
       model: v.model,
+      vin: v.vin,
+      vehicleType: v.vehicleType,
+      photo: v.photo,
     });
     setNameError(null);
     setEditing(v);
@@ -178,23 +264,23 @@ export function ManageVehiclesModal({ onClose }: ManageVehiclesModalProps) {
     const yearVal = form.year.trim() ? parseInt(form.year.trim(), 10) : null;
     setSaving(true);
     const now = new Date();
+    const payload = {
+      name: trimmedName,
+      year: yearVal,
+      make: form.make.trim(),
+      model: form.model.trim(),
+      vin: form.vin.trim(),
+      vehicleType: form.vehicleType,
+      photo: form.photo,
+    };
     if (editing === undefined) {
       await db.vehicles.add({
-        name: trimmedName,
-        year: yearVal,
-        make: form.make.trim(),
-        model: form.model.trim(),
+        ...payload,
         createdAt: now,
         updatedAt: now,
       } as Vehicle);
     } else if (editing?.id !== undefined) {
-      await db.vehicles.update(editing.id, {
-        name: trimmedName,
-        year: yearVal,
-        make: form.make.trim(),
-        model: form.model.trim(),
-        updatedAt: now,
-      });
+      await db.vehicles.update(editing.id, { ...payload, updatedAt: now });
     }
     setSaving(false);
     closeForm();
@@ -273,8 +359,171 @@ export function ManageVehiclesModal({ onClose }: ManageVehiclesModalProps) {
         {/* ── Form view ── */}
         {isFormView ? (
           <>
+            {/* Vehicle photo */}
+            <div style={{ marginBottom: "16px" }}>
+              {form.photo ? (
+                <div style={{ position: "relative" }}>
+                  <img
+                    src={form.photo}
+                    alt="Vehicle"
+                    style={{
+                      width: "100%",
+                      height: "180px",
+                      objectFit: "cover",
+                      borderRadius: "12px",
+                      border: "1.5px solid var(--md-outline-variant)",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "8px",
+                      right: "8px",
+                      display: "flex",
+                      gap: "6px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        photoInputRef.current?.click();
+                      }}
+                      aria-label="Retake photo"
+                      style={{
+                        background: "rgba(0,0,0,0.55)",
+                        border: "none",
+                        borderRadius: "50%",
+                        width: "36px",
+                        height: "36px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        color: "#fff",
+                      }}
+                    >
+                      <span className="ms icon-20" aria-hidden="true">
+                        photo_camera
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm((f) => ({ ...f, photo: null }));
+                      }}
+                      aria-label="Remove photo"
+                      style={{
+                        background: "rgba(0,0,0,0.55)",
+                        border: "none",
+                        borderRadius: "50%",
+                        width: "36px",
+                        height: "36px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        color: "#fff",
+                      }}
+                    >
+                      <span className="ms icon-20" aria-hidden="true">
+                        close
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    photoInputRef.current?.click();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "none",
+                    border: "1.5px dashed var(--md-outline-variant)",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    cursor: "pointer",
+                    color: "var(--md-on-surface-variant)",
+                    fontSize: "0.875rem",
+                    fontWeight: 500,
+                    width: "100%",
+                    justifyContent: "center",
+                  }}
+                >
+                  <span className="ms icon-20" aria-hidden="true">
+                    photo_camera
+                  </span>
+                  Add vehicle photo (optional)
+                </button>
+              )}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  void handlePhotoChange(e);
+                }}
+                aria-hidden="true"
+              />
+            </div>
+
+            {/* Vehicle type picker */}
+            <div style={{ marginBottom: "16px" }}>
+              <p className="md-field-label" style={{ marginBottom: "8px" }}>
+                Type
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: "8px",
+                }}
+              >
+                {VEHICLE_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => {
+                      setForm((f) => ({ ...f, vehicleType: type }));
+                    }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "10px 4px",
+                      borderRadius: "10px",
+                      border: `1.5px solid ${form.vehicleType === type ? "var(--md-primary)" : "var(--md-outline-variant)"}`,
+                      backgroundColor:
+                        form.vehicleType === type
+                          ? "var(--md-primary-container)"
+                          : "transparent",
+                      color:
+                        form.vehicleType === type
+                          ? "var(--md-on-primary-container)"
+                          : "var(--md-on-surface-variant)",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                      fontSize: "0.6875rem",
+                      fontWeight: form.vehicleType === type ? 600 : 400,
+                    }}
+                  >
+                    <span className="ms icon-22" aria-hidden="true">
+                      {VEHICLE_TYPE_ICONS[type]}
+                    </span>
+                    {VEHICLE_TYPE_LABELS[type]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Name */}
-            <div className="md-field" style={{ marginBottom: "14px" }}>
+            <div className="md-field" style={{ marginBottom: "12px" }}>
               <label className="md-field-label" htmlFor="veh-name">
                 Nickname / Label
               </label>
@@ -304,58 +553,82 @@ export function ManageVehiclesModal({ onClose }: ManageVehiclesModalProps) {
               )}
             </div>
 
-            {/* Year */}
-            <div className="md-field" style={{ marginBottom: "14px" }}>
-              <label className="md-field-label" htmlFor="veh-year">
-                Year (optional)
-              </label>
-              <input
-                id="veh-year"
-                type="number"
-                min="1900"
-                max={new Date().getFullYear() + 2}
-                placeholder={String(new Date().getFullYear())}
-                value={form.year}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, year: e.target.value }));
-                }}
-                className="md-input"
-              />
+            {/* Year / Make / Model row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "80px 1fr 1fr",
+                gap: "10px",
+                marginBottom: "12px",
+              }}
+            >
+              <div className="md-field">
+                <label className="md-field-label" htmlFor="veh-year">
+                  Year
+                </label>
+                <input
+                  id="veh-year"
+                  type="number"
+                  min="1900"
+                  max={new Date().getFullYear() + 2}
+                  placeholder={String(new Date().getFullYear())}
+                  value={form.year}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, year: e.target.value }));
+                  }}
+                  className="md-input"
+                />
+              </div>
+              <div className="md-field">
+                <label className="md-field-label" htmlFor="veh-make">
+                  Make
+                </label>
+                <input
+                  id="veh-make"
+                  type="text"
+                  maxLength={60}
+                  placeholder="Toyota"
+                  value={form.make}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, make: e.target.value }));
+                  }}
+                  className="md-input"
+                />
+              </div>
+              <div className="md-field">
+                <label className="md-field-label" htmlFor="veh-model">
+                  Model
+                </label>
+                <input
+                  id="veh-model"
+                  type="text"
+                  maxLength={60}
+                  placeholder="Camry"
+                  value={form.model}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, model: e.target.value }));
+                  }}
+                  className="md-input"
+                />
+              </div>
             </div>
 
-            {/* Make */}
-            <div className="md-field" style={{ marginBottom: "14px" }}>
-              <label className="md-field-label" htmlFor="veh-make">
-                Make (optional)
-              </label>
-              <input
-                id="veh-make"
-                type="text"
-                maxLength={60}
-                placeholder="e.g. Toyota, Ford"
-                value={form.make}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, make: e.target.value }));
-                }}
-                className="md-input"
-              />
-            </div>
-
-            {/* Model */}
+            {/* VIN */}
             <div className="md-field" style={{ marginBottom: "20px" }}>
-              <label className="md-field-label" htmlFor="veh-model">
-                Model (optional)
+              <label className="md-field-label" htmlFor="veh-vin">
+                VIN (optional)
               </label>
               <input
-                id="veh-model"
+                id="veh-vin"
                 type="text"
-                maxLength={60}
-                placeholder="e.g. Camry, F-150"
-                value={form.model}
+                maxLength={17}
+                placeholder="17-character VIN"
+                value={form.vin}
                 onChange={(e) => {
-                  setForm((f) => ({ ...f, model: e.target.value }));
+                  setForm((f) => ({ ...f, vin: e.target.value.toUpperCase() }));
                 }}
                 className="md-input"
+                style={{ fontFamily: "monospace", letterSpacing: "0.05em" }}
               />
             </div>
 

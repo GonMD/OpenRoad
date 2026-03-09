@@ -1,8 +1,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, getSettings } from "../db/index.js";
-import { useGeolocation } from "../hooks/useGeolocation.js";
+import { db, getSettings, updateSettings } from "../db/index.js";
+import { useGeolocation } from "../contexts/GeolocationContext.tsx";
 import { useTripTracker } from "../hooks/useTripTracker.js";
-import { useTripNotification } from "../hooks/useTripNotification.js";
+
 import { useBackgroundSync } from "../hooks/useBackgroundSync.js";
 import { formatDistance } from "../lib/distance.js";
 import {
@@ -11,8 +11,15 @@ import {
   formatCurrency,
 } from "../lib/irsRates.js";
 import { TRIP_PURPOSE_LABELS } from "../types/index.js";
-import type { AppSettings, TripPurpose, TripTemplate } from "../types/index.js";
-import { useState, useEffect } from "react";
+import type {
+  AppSettings,
+  TripPurpose,
+  TripTemplate,
+  Vehicle,
+} from "../types/index.js";
+import { VEHICLE_TYPE_ICONS } from "../types/index.js";
+import { useState, useEffect, useRef } from "react";
+import { useWakeLock } from "../hooks/useWakeLock.js";
 import { EndTripModal } from "../components/EndTripModal.js";
 import { ManageTemplatesModal } from "../components/ManageTemplatesModal.js";
 import { OdometerCapture } from "../components/OdometerCapture.js";
@@ -30,6 +37,9 @@ export function DashboardPage() {
 
   const zones = useLiveQuery(() => db.zones.toArray(), []) ?? [];
   const allTrips = useLiveQuery(() => db.trips.toArray(), []) ?? [];
+  const vehicles =
+    useLiveQuery<Vehicle[]>(() => db.vehicles.orderBy("name").toArray(), []) ??
+    [];
   const templates =
     useLiveQuery<TripTemplate[]>(
       () => db.templates.orderBy("createdAt").toArray(),
@@ -49,6 +59,7 @@ export function DashboardPage() {
     null,
   );
   const [pendingNotes, setPendingNotes] = useState<string>("");
+  const [pendingVehicleId, setPendingVehicleId] = useState<number | null>(null);
   const [startOdomReading, setStartOdomReading] = useState("");
   const [startOdomPhoto, setStartOdomPhoto] = useState<string | null>(null);
 
@@ -62,8 +73,51 @@ export function DashboardPage() {
     addPitStop,
   } = useTripTracker(coordinate, accuracy, zones, settings);
 
-  useTripNotification(isTracking, currentMiles, activeTrip?.purpose ?? null);
   useBackgroundSync(isWatching);
+
+  // ── Screen wake lock: keep display on while a trip is in progress ─────────
+  useWakeLock(isTracking && (settings?.keepScreenOn ?? true));
+
+  // ── Software dim overlay ──────────────────────────────────────────────────
+  // null = auto (follow tracking+settings), true/false = user override
+  const [userDimOverride, setUserDimOverride] = useState<boolean | null>(null);
+  const undimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset user override when tracking stops (update-during-render pattern —
+  // avoids setState-in-effect while keeping dim state in sync with tracking)
+  const [prevIsTracking, setPrevIsTracking] = useState(false);
+  if (prevIsTracking !== isTracking) {
+    setPrevIsTracking(isTracking);
+    if (!isTracking) {
+      setUserDimOverride(null);
+    }
+  }
+
+  // Clean up the undim timer when tracking stops or on unmount
+  useEffect(() => {
+    if (!isTracking) {
+      if (undimTimerRef.current) {
+        clearTimeout(undimTimerRef.current);
+        undimTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (undimTimerRef.current) clearTimeout(undimTimerRef.current);
+    };
+  }, [isTracking]);
+
+  // Derived dim state: user override takes precedence, otherwise auto
+  const isDimmed =
+    userDimOverride ?? (isTracking && (settings?.autoDimWhenTracking ?? false));
+
+  const handleDimTap = () => {
+    setUserDimOverride(false);
+    if (undimTimerRef.current) clearTimeout(undimTimerRef.current);
+    // Re-dim after 6 s of inactivity
+    undimTimerRef.current = setTimeout(() => {
+      setUserDimOverride(null);
+    }, 6000);
+  };
 
   const currentYear = new Date().getFullYear();
   const rates = settings?.customIrsRates ?? getRatesForYear(currentYear);
@@ -81,6 +135,8 @@ export function DashboardPage() {
   const openStartSheet = (purpose: TripPurpose, notes = "") => {
     setPendingPurpose(purpose);
     setPendingNotes(notes);
+    // Default to the last used vehicle (stored in settings)
+    setPendingVehicleId(settings?.activeVehicleId ?? null);
     setStartOdomReading("");
     setStartOdomPhoto(null);
   };
@@ -96,7 +152,10 @@ export function DashboardPage() {
       pendingNotes,
       validReading,
       startOdomPhoto,
+      pendingVehicleId,
     );
+    // Persist the chosen vehicle as the new default for next time
+    void updateSettings({ activeVehicleId: pendingVehicleId });
     setPendingPurpose(null);
   };
 
@@ -346,6 +405,19 @@ export function DashboardPage() {
               </span>
             </button>
             <button
+              onClick={() => {
+                setUserDimOverride(!isDimmed);
+              }}
+              className="md-btn-tonal"
+              style={{ flexShrink: 0 }}
+              aria-label={isDimmed ? "Undim screen" : "Dim screen"}
+              title="Dim screen while tracking"
+            >
+              <span className="ms icon-20" aria-hidden="true">
+                {isDimmed ? "brightness_high" : "brightness_low"}
+              </span>
+            </button>
+            <button
               onClick={() => void discardTrip()}
               className="md-btn-error-text"
               style={{
@@ -425,6 +497,74 @@ export function DashboardPage() {
                 </span>
               </button>
             </div>
+
+            {/* Vehicle picker */}
+            {vehicles.length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <p className="md-field-label" style={{ marginBottom: "8px" }}>
+                  Vehicle
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <button
+                    onClick={() => {
+                      setPendingVehicleId(null);
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "100px",
+                      border: `1.5px solid ${pendingVehicleId === null ? "var(--md-primary)" : "var(--md-outline-variant)"}`,
+                      backgroundColor:
+                        pendingVehicleId === null
+                          ? "var(--md-primary-container)"
+                          : "transparent",
+                      color:
+                        pendingVehicleId === null
+                          ? "var(--md-on-primary-container)"
+                          : "var(--md-on-surface-variant)",
+                      fontSize: "0.875rem",
+                      fontWeight: pendingVehicleId === null ? 600 : 400,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    No vehicle
+                  </button>
+                  {vehicles.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => {
+                        setPendingVehicleId(v.id ?? null);
+                      }}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "100px",
+                        border: `1.5px solid ${pendingVehicleId === v.id ? "var(--md-primary)" : "var(--md-outline-variant)"}`,
+                        backgroundColor:
+                          pendingVehicleId === v.id
+                            ? "var(--md-primary-container)"
+                            : "transparent",
+                        color:
+                          pendingVehicleId === v.id
+                            ? "var(--md-on-primary-container)"
+                            : "var(--md-on-surface-variant)",
+                        fontSize: "0.875rem",
+                        fontWeight: pendingVehicleId === v.id ? 600 : 400,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <span className="ms icon-16" aria-hidden="true">
+                        {VEHICLE_TYPE_ICONS[v.vehicleType]}
+                      </span>
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <OdometerCapture
               label="Start Odometer Reading (optional)"
@@ -770,6 +910,22 @@ export function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* Dim overlay — covers full viewport while tracking with screen dim on */}
+      {isDimmed && isTracking && (
+        <div
+          role="button"
+          aria-label="Screen dimmed — tap to temporarily restore brightness"
+          onClick={handleDimTap}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            backgroundColor: `rgba(0,0,0,${String(settings?.dimLevel ?? 0.85)})`,
+            cursor: "pointer",
+          }}
+        />
+      )}
     </div>
   );
 }

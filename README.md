@@ -2,8 +2,6 @@
 
 A Progressive Web App (PWA) for automatically tracking vehicle mileage using GPS. Built for IRS standard mileage deductions and employer reimbursement programs. No app store required.
 
-https://openroad.drgon47.workers.dev
-
 ## Install on Your Device
 
 ### Android

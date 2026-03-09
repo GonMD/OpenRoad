@@ -12,6 +12,7 @@ import { useThemeContext } from "../contexts/ThemeContext.js";
 import { ManageVehiclesModal } from "../components/ManageVehiclesModal.js";
 import { vehicleLabel } from "../lib/vehicleLabel.js";
 import type { AppSettings, IrsRates, Vehicle } from "../types/index.js";
+import { VEHICLE_TYPE_ICONS } from "../types/index.js";
 
 function SectionCard({
   title,
@@ -317,7 +318,7 @@ export function SettingsPage() {
                     flexShrink: 0,
                   }}
                 >
-                  directions_car
+                  {VEHICLE_TYPE_ICONS[v.vehicleType]}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p
@@ -362,6 +363,108 @@ export function SettingsPage() {
           </span>
           Manage Vehicles
         </button>
+      </SectionCard>
+
+      {/* Screen & Tracking */}
+      <SectionCard title="Screen & Tracking">
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+          }}
+        >
+          <div>
+            <span
+              style={{ fontSize: "0.9375rem", color: "var(--md-on-surface)" }}
+            >
+              Keep screen on while tracking
+            </span>
+            <p
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--md-on-surface-variant)",
+                margin: "2px 0 0",
+              }}
+            >
+              Uses Screen Wake Lock to prevent sleep during trips
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.keepScreenOn}
+            onChange={(e) =>
+              void handleChange({ keepScreenOn: e.target.checked })
+            }
+            className="md-switch"
+          />
+        </label>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+          }}
+        >
+          <div>
+            <span
+              style={{ fontSize: "0.9375rem", color: "var(--md-on-surface)" }}
+            >
+              Auto-dim when tracking starts
+            </span>
+            <p
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--md-on-surface-variant)",
+                margin: "2px 0 0",
+              }}
+            >
+              Tap the screen to temporarily restore brightness
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.autoDimWhenTracking}
+            onChange={(e) =>
+              void handleChange({ autoDimWhenTracking: e.target.checked })
+            }
+            className="md-switch"
+          />
+        </label>
+        {settings.autoDimWhenTracking && (
+          <div>
+            <label className="md-field-label" htmlFor="dim-level">
+              Dim level — {Math.round((1 - settings.dimLevel) * 100)}%
+              brightness
+            </label>
+            <input
+              id="dim-level"
+              type="range"
+              min="0.4"
+              max="0.97"
+              step="0.01"
+              value={settings.dimLevel}
+              onChange={(e) =>
+                void handleChange({ dimLevel: parseFloat(e.target.value) })
+              }
+              style={{ width: "100%", marginTop: "8px" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "0.75rem",
+                color: "var(--md-on-surface-variant)",
+                marginTop: "2px",
+              }}
+            >
+              <span>Brighter</span>
+              <span>Darker</span>
+            </div>
+          </div>
+        )}
       </SectionCard>
 
       {/* GPS Accuracy */}

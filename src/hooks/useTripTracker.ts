@@ -94,7 +94,12 @@ export function useTripTracker(
       notes = "",
       odometerStart: number | null = null,
       odometerStartPhoto: string | null = null,
+      vehicleId?: number | null,
     ) => {
+      const resolvedVehicleId =
+        vehicleId !== undefined
+          ? vehicleId
+          : (settings?.activeVehicleId ?? null);
       const now = new Date();
       const tripId = await db.trips.add({
         purpose,
@@ -108,7 +113,7 @@ export function useTripTracker(
         originAddress: null,
         destinationAddress: null,
         pitStops: [],
-        vehicleId: settings?.activeVehicleId ?? null,
+        vehicleId: resolvedVehicleId,
         odometerStart,
         odometerEnd: null,
         odometerStartPhoto,
