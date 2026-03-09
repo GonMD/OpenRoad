@@ -133,36 +133,6 @@ function TripCard({
             >
               {date}
             </span>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color: "var(--md-on-surface-variant)",
-                display: "flex",
-                alignItems: "center",
-                gap: "3px",
-              }}
-            >
-              <span className="ms icon-14" aria-hidden="true">
-                schedule
-              </span>
-              {startTime}
-              {endTime && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    style={{ color: "var(--md-outline)" }}
-                  >
-                    →
-                  </span>
-                  {endDateStr && (
-                    <span style={{ color: "var(--md-outline)" }}>
-                      {endDateStr}
-                    </span>
-                  )}
-                  {endTime}
-                </>
-              )}
-            </span>
           </div>
           <p
             style={{
@@ -173,6 +143,36 @@ function TripCard({
             }}
           >
             {formatDistance(trip.distanceMiles, distanceUnit)}
+          </p>
+
+          {/* Start → End time */}
+          <p
+            style={{
+              fontSize: "0.75rem",
+              color: "var(--md-on-surface-variant)",
+              margin: "2px 0 0",
+              display: "flex",
+              alignItems: "center",
+              gap: "3px",
+            }}
+          >
+            <span className="ms icon-14" aria-hidden="true">
+              schedule
+            </span>
+            {startTime}
+            {endTime && (
+              <>
+                <span aria-hidden="true" style={{ color: "var(--md-outline)" }}>
+                  →
+                </span>
+                {endDateStr && (
+                  <span style={{ color: "var(--md-outline)" }}>
+                    {endDateStr}
+                  </span>
+                )}
+                {endTime}
+              </>
+            )}
           </p>
 
           {/* Origin → Destination addresses */}
