@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { geocodeAddress } from "../lib/geocode.js";
@@ -23,7 +24,8 @@ import {
   formatDistanceKm,
 } from "../lib/routing.js";
 import type { RouteResult } from "../lib/routing.js";
-import type { Coordinate } from "../types/index.js";
+import type { Coordinate, Zone } from "../types/index.js";
+import { db } from "../db/index.js";
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
   ._getIconUrl;
@@ -53,6 +55,8 @@ function blankStop(): Stop {
   };
 }
 
+const EMPTY_ZONES: Zone[] = [];
+
 // ─── Address input with autocomplete ─────────────────────────────────────────
 
 function StopInput({
@@ -60,19 +64,35 @@ function StopInput({
   label,
   placeholder,
   removable,
+  zones,
   onQueryChange,
   onSelect,
   onRemove,
+  onSaveToZones,
 }: {
   stop: Stop;
   label: string;
   placeholder: string;
   removable: boolean;
+  zones: Zone[];
   onQueryChange: (id: string, q: string) => void;
   onSelect: (id: string, r: GeocodeResult) => void;
   onRemove: (id: string) => void;
+  onSaveToZones: (result: GeocodeResult) => void;
 }) {
+  const [mode, setMode] = useState<"zones" | "search">("search");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Capture for stable narrowing inside closures
+  const geocoded = stop.geocoded;
+
+  const alreadyInZones =
+    geocoded !== null &&
+    zones.some(
+      (z) =>
+        Math.abs(z.lat - geocoded.lat) < 0.001 &&
+        Math.abs(z.lng - geocoded.lng) < 0.001,
+    );
 
   const handleInput = (q: string) => {
     onQueryChange(stop.id, q);
@@ -93,7 +113,47 @@ function StopInput({
           >
             {label}
           </p>
-          {stop.geocoded ? (
+
+          {/* Tab switcher — shown only when not yet geocoded and zones exist */}
+          {geocoded === null && zones.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: "6px",
+                marginBottom: "8px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("zones");
+                }}
+                className={`md-chip${mode === "zones" ? " md-chip-selected" : ""}`}
+                style={{ fontSize: "0.75rem", padding: "3px 10px", gap: "4px" }}
+              >
+                <span className="ms icon-16" aria-hidden="true">
+                  star
+                </span>
+                My Zones
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("search");
+                }}
+                className={`md-chip${mode === "search" ? " md-chip-selected" : ""}`}
+                style={{ fontSize: "0.75rem", padding: "3px 10px", gap: "4px" }}
+              >
+                <span className="ms icon-16" aria-hidden="true">
+                  search
+                </span>
+                Search
+              </button>
+            </div>
+          )}
+
+          {geocoded !== null ? (
+            /* Confirmed location chip */
             <div
               style={{
                 display: "flex",
@@ -122,8 +182,38 @@ function StopInput({
                   whiteSpace: "nowrap",
                 }}
               >
-                {stop.geocoded.displayName.split(",").slice(0, 2).join(",")}
+                {geocoded.displayName.split(",").slice(0, 2).join(",")}
               </span>
+
+              {/* Star — save to zones */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!alreadyInZones) onSaveToZones(geocoded);
+                }}
+                aria-label={
+                  alreadyInZones ? "Already saved to zones" : "Save to zones"
+                }
+                title={alreadyInZones ? "Already in Zones" : "Save to Zones"}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: alreadyInZones
+                    ? "var(--md-primary)"
+                    : "var(--md-outline)",
+                  cursor: alreadyInZones ? "default" : "pointer",
+                  padding: "2px",
+                  display: "flex",
+                  alignItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <span className="ms icon-16" aria-hidden="true">
+                  {alreadyInZones ? "star" : "star_border"}
+                </span>
+              </button>
+
+              {/* Clear */}
               <button
                 type="button"
                 onClick={() => {
@@ -145,7 +235,74 @@ function StopInput({
                 </span>
               </button>
             </div>
+          ) : mode === "zones" ? (
+            /* Zones list */
+            <div
+              style={{
+                borderRadius: "8px",
+                border: "1px solid var(--md-outline-variant)",
+                overflow: "hidden",
+                maxHeight: "200px",
+                overflowY: "auto",
+              }}
+            >
+              {zones.map((zone) => (
+                <button
+                  key={zone.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(stop.id, {
+                      displayName: zone.name,
+                      lat: zone.lat,
+                      lng: zone.lng,
+                    });
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    background: "none",
+                    border: "none",
+                    borderBottom: "1px solid var(--md-outline-variant)",
+                    cursor: "pointer",
+                    fontSize: "0.8125rem",
+                    color: "var(--md-on-surface)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span
+                    className="ms icon-16"
+                    aria-hidden="true"
+                    style={{ color: "var(--md-primary)", flexShrink: 0 }}
+                  >
+                    location_on
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {zone.name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--md-outline)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {zone.radiusMeters}m
+                  </span>
+                </button>
+              ))}
+            </div>
           ) : (
+            /* Search input */
             <div style={{ position: "relative" }}>
               <input
                 type="text"
@@ -201,74 +358,76 @@ function StopInput({
         )}
       </div>
 
-      {/* Suggestions dropdown */}
-      {!stop.geocoded && stop.suggestions.length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: removable ? "36px" : 0,
-            zIndex: 500,
-            backgroundColor: "var(--md-surface-container)",
-            border: "1px solid var(--md-outline-variant)",
-            borderRadius: "8px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-            overflow: "hidden",
-            marginTop: "2px",
-          }}
-        >
-          {stop.suggestions.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                onSelect(stop.id, s);
-              }}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "10px 12px",
-                background: "none",
-                border: "none",
-                borderBottom:
-                  i < stop.suggestions.length - 1
-                    ? "1px solid var(--md-outline-variant)"
-                    : "none",
-                cursor: "pointer",
-                fontSize: "0.8125rem",
-                color: "var(--md-on-surface)",
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "8px",
-              }}
-            >
-              <span
-                className="ms icon-16"
-                aria-hidden="true"
+      {/* Suggestions dropdown — only in search mode */}
+      {mode === "search" &&
+        geocoded === null &&
+        stop.suggestions.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: removable ? "36px" : 0,
+              zIndex: 500,
+              backgroundColor: "var(--md-surface-container)",
+              border: "1px solid var(--md-outline-variant)",
+              borderRadius: "8px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              overflow: "hidden",
+              marginTop: "2px",
+            }}
+          >
+            {stop.suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  onSelect(stop.id, s);
+                }}
                 style={{
-                  color: "var(--md-outline)",
-                  marginTop: "1px",
-                  flexShrink: 0,
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "10px 12px",
+                  background: "none",
+                  border: "none",
+                  borderBottom:
+                    i < stop.suggestions.length - 1
+                      ? "1px solid var(--md-outline-variant)"
+                      : "none",
+                  cursor: "pointer",
+                  fontSize: "0.8125rem",
+                  color: "var(--md-on-surface)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "8px",
                 }}
               >
-                location_on
-              </span>
-              <span
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                }}
-              >
-                {s.displayName}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+                <span
+                  className="ms icon-16"
+                  aria-hidden="true"
+                  style={{
+                    color: "var(--md-outline)",
+                    marginTop: "1px",
+                    flexShrink: 0,
+                  }}
+                >
+                  location_on
+                </span>
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                  }}
+                >
+                  {s.displayName}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
     </div>
   );
 }
@@ -372,6 +531,10 @@ export function RoutePlannerPage() {
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const zones =
+    useLiveQuery<Zone[]>(() => db.zones.orderBy("name").toArray(), []) ??
+    EMPTY_ZONES;
+
   // Debounced geocode search when query changes
   const searchTimers = useRef<
     Record<string, ReturnType<typeof setTimeout> | undefined>
@@ -427,6 +590,18 @@ export function RoutePlannerPage() {
     setRoute(null);
   }, []);
 
+  const handleSaveToZones = useCallback((result: GeocodeResult) => {
+    const name = result.displayName.split(",")[0].trim();
+    void db.zones.add({
+      name,
+      lat: result.lat,
+      lng: result.lng,
+      radiusMeters: 200,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }, []);
+
   const addStop = () => {
     // Insert before the last (end) stop
     setStops((prev) => [
@@ -467,7 +642,11 @@ export function RoutePlannerPage() {
     };
     const midCoords: Coordinate[] = stops
       .slice(1, -1)
-      .map((s) => ({ lat: s.geocoded!.lat, lng: s.geocoded!.lng }));
+      .flatMap((s) =>
+        s.geocoded !== null
+          ? [{ lat: s.geocoded.lat, lng: s.geocoded.lng }]
+          : [],
+      );
 
     const optimized = optimizeStops(startCoord, midCoords, preferRightTurns);
 
@@ -626,9 +805,11 @@ export function RoutePlannerPage() {
                   label={label}
                   placeholder={placeholder}
                   removable={isIntermediate}
+                  zones={zones}
                   onQueryChange={handleQueryChange}
                   onSelect={handleSelect}
                   onRemove={handleRemove}
+                  onSaveToZones={handleSaveToZones}
                 />
               </div>
             </div>
