@@ -583,8 +583,9 @@
     align-items: center;
     gap: 4px;
     flex: 1;
+    min-width: 0;
     cursor: pointer;
-    padding: 8px 0;
+    padding: 8px 2px;
     -webkit-tap-highlight-color: transparent;
     text-decoration: none;
     color: var(--md-on-surface-variant);
@@ -593,11 +594,17 @@
     letter-spacing: 0.03em;
     transition: color 0.15s;
   }
+  .md-nav-item > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .md-nav-item-active {
     color: var(--md-on-surface);
   }
   .md-nav-indicator {
-    width: 64px;
+    width: min(64px, calc(100% - 4px));
     height: 32px;
     border-radius: 16px;
     background-color: var(--md-secondary-container);
@@ -608,7 +615,7 @@
     transition: background-color 0.2s;
   }
   .md-nav-indicator-inactive {
-    width: 64px;
+    width: min(64px, calc(100% - 4px));
     height: 32px;
     border-radius: 16px;
     display: flex;
