@@ -153,6 +153,117 @@ export function SettingsPage() {
         )}
       </div>
 
+      {/* Donation Banner */}
+      <div
+        style={{
+          background:
+            "linear-gradient(135deg, var(--md-primary-container) 0%, var(--md-surface-container-high) 100%)",
+          border: "1px solid var(--md-outline-variant)",
+          borderRadius: "16px",
+          padding: "16px 20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span
+            className="ms icon-20"
+            aria-hidden="true"
+            style={{ color: "var(--md-primary)", flexShrink: 0 }}
+          >
+            favorite
+          </span>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "var(--md-on-primary-container)",
+            }}
+          >
+            Support OpenRoad
+          </p>
+        </div>
+        <p
+          style={{
+            margin: 0,
+            fontSize: "0.8125rem",
+            color: "var(--md-on-surface-variant)",
+            lineHeight: 1.4,
+          }}
+        >
+          If this app saves you time, consider buying me a coffee.
+        </p>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <a
+            href="https://paypal.me/drgon47"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "100px",
+              backgroundColor: "var(--md-primary)",
+              color: "var(--md-on-primary)",
+              fontSize: "0.8125rem",
+              fontWeight: 500,
+              textDecoration: "none",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            PayPal
+          </a>
+          <a
+            href="https://cash.app/$gonmd"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "100px",
+              backgroundColor:
+                "var(--md-secondary-container, var(--md-surface-container-highest))",
+              color: "var(--md-on-secondary-container, var(--md-on-surface))",
+              fontSize: "0.8125rem",
+              fontWeight: 500,
+              textDecoration: "none",
+              border: "1px solid var(--md-outline-variant)",
+              cursor: "pointer",
+            }}
+          >
+            Cash App
+          </a>
+          <a
+            href="https://venmo.com/Eric-Fisher-18"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "100px",
+              backgroundColor:
+                "var(--md-secondary-container, var(--md-surface-container-highest))",
+              color: "var(--md-on-secondary-container, var(--md-on-surface))",
+              fontSize: "0.8125rem",
+              fontWeight: 500,
+              textDecoration: "none",
+              border: "1px solid var(--md-outline-variant)",
+              cursor: "pointer",
+            }}
+          >
+            Venmo
+          </a>
+        </div>
+      </div>
+
       {/* Distance Unit */}
       <SectionCard title="Distance Unit">
         <div style={{ display: "flex", gap: "8px" }}>
