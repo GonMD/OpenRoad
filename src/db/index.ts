@@ -233,6 +233,18 @@ export async function updateSettings(
 }
 
 /**
+ * Finds and returns any trip that is still marked as "in_progress".
+ * This allows recovery after the app is closed unexpectedly.
+ */
+export async function findInProgressTrip(): Promise<Trip | null> {
+  const inProgress = await db.trips
+    .where("status")
+    .equals("in_progress")
+    .first();
+  return inProgress ?? null;
+}
+
+/**
  * Deletes location samples older than the configured age threshold.
  * Runs on startup; does nothing if locationSampleMaxAgeDays is 0.
  */

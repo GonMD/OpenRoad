@@ -1,8 +1,11 @@
 import { Outlet } from "react-router-dom";
 import { BottomNav } from "./BottomNav.js";
 import { BannerBar } from "./BannerBar.js";
+import { useSwipeNavigation } from "../../hooks/useSwipeNavigation.js";
 
 export function AppLayout() {
+  const swipeRef = useSwipeNavigation();
+
   return (
     <div
       style={{
@@ -15,6 +18,7 @@ export function AppLayout() {
     >
       <BannerBar />
       <main
+        ref={swipeRef}
         style={{
           flex: 1,
           overflowY: "auto",
@@ -27,6 +31,7 @@ export function AppLayout() {
           marginRight: "auto",
           width: "100%",
           boxSizing: "border-box",
+          touchAction: "pan-y", // Allow vertical scroll, handle horizontal swipes
         }}
       >
         <Outlet />

@@ -8,11 +8,14 @@ import type {
   AppSettings,
   PitStop,
 } from "../types/index.js";
-import { db } from "../db/index.js";
+import { db, findInProgressTrip } from "../db/index.js";
 import { pathDistanceMiles } from "../lib/distance.js";
 import { hapticStart, hapticEnd, hapticDiscard } from "../lib/haptic.js";
 import { resolveAddresses } from "../lib/geocode.js";
 import { useGeofence } from "./useGeofence.js";
+
+/** Interval (ms) for periodically saving trip metadata to IndexedDB */
+const PERIODIC_SAVE_INTERVAL_MS = 30_000; // 30 seconds
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,57 @@ export function useTripTracker(
   // duplicate entries when GPS oscillates on a zone boundary.
   const visitedZonesRef = useRef<Set<number>>(new Set());
 
+  // Flag to prevent multiple recovery attempts
+  const recoveryAttemptedRef = useRef(false);
+
+  // ─── Trip Recovery ────────────────────────────────────────────────────────────
+  // On mount, check for any in-progress trip that wasn't properly ended
+  // (e.g., app was killed while tracking). Restore state from IndexedDB.
+  useEffect(() => {
+    if (recoveryAttemptedRef.current) return;
+    recoveryAttemptedRef.current = true;
+
+    void (async () => {
+      const inProgressTrip = await findInProgressTrip();
+      if (inProgressTrip?.id === undefined) return;
+
+      // Load existing breadcrumbs from locationSamples
+      const samples = await db.locationSamples
+        .where("tripId")
+        .equals(inProgressTrip.id)
+        .sortBy("timestamp");
+
+      const restoredBreadcrumbs: Coordinate[] = samples.map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+      }));
+
+      // Restore pit stops from the trip record
+      const restoredPitStops = inProgressTrip.pitStops;
+
+      // Rebuild visited zones set from origin + pit stops
+      const visited = new Set<number>();
+      if (inProgressTrip.originZoneId !== null) {
+        visited.add(inProgressTrip.originZoneId);
+      }
+      for (const ps of restoredPitStops) {
+        if (ps.zoneId !== null) visited.add(ps.zoneId);
+      }
+
+      // Restore state
+      breadcrumbsRef.current = restoredBreadcrumbs;
+      pitStopsRef.current = restoredPitStops;
+      visitedZonesRef.current = visited;
+      setActiveTripId(inProgressTrip.id);
+      setCurrentMiles(pathDistanceMiles(restoredBreadcrumbs));
+      setIsTracking(true);
+
+      console.info(
+        `[TripTracker] Recovered in-progress trip #${String(inProgressTrip.id)} with ${String(restoredBreadcrumbs.length)} breadcrumbs`,
+      );
+    })();
+  }, []);
+
   // Live query: returns the active trip from DB reactively
   const activeTrip =
     useLiveQuery<Trip | undefined>(
@@ -86,6 +140,70 @@ export function useTripTracker(
     // Update distance display — done in same effect to avoid a second render
     setCurrentMiles(pathDistanceMiles(breadcrumbsRef.current));
   }, [coordinate, accuracy, isTracking, activeTripId, settings]);
+
+  // ─── Periodic Trip Metadata Save ──────────────────────────────────────────────
+  // Periodically persist distance and pit stops to survive unexpected app closure
+  useEffect(() => {
+    if (!isTracking || activeTripId === null) return;
+
+    const saveMetadata = async () => {
+      const miles = pathDistanceMiles(breadcrumbsRef.current);
+      const pitStopsSnapshot = [...pitStopsRef.current];
+      await db.trips.update(activeTripId, {
+        distanceMiles: miles,
+        pitStops: pitStopsSnapshot,
+        updatedAt: new Date(),
+      });
+    };
+
+    const intervalId = setInterval(() => {
+      void saveMetadata();
+    }, PERIODIC_SAVE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isTracking, activeTripId]);
+
+  // ─── Save on Page Hide / Visibility Change ────────────────────────────────────
+  // Persist trip state immediately when the app is about to be hidden or closed.
+  // Uses pagehide (more reliable for mobile) and visibilitychange as backup.
+  useEffect(() => {
+    if (!isTracking || activeTripId === null) return;
+
+    const saveBeforeUnload = () => {
+      const miles = pathDistanceMiles(breadcrumbsRef.current);
+      const pitStopsSnapshot = [...pitStopsRef.current];
+
+      // Use sendBeacon or synchronous update for reliability
+      // Since Dexie is async, we use a fire-and-forget approach
+      // The data should already be mostly persisted via periodic saves
+      void db.trips.update(activeTripId, {
+        distanceMiles: miles,
+        pitStops: pitStopsSnapshot,
+        updatedAt: new Date(),
+      });
+    };
+
+    const handlePageHide = () => {
+      saveBeforeUnload();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        saveBeforeUnload();
+      }
+    };
+
+    // pagehide is more reliable on mobile Safari/iOS
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isTracking, activeTripId]);
 
   const startTrip = useCallback(
     async (
