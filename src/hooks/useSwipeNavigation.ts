@@ -11,7 +11,10 @@ const SWIPE_THRESHOLD = 50;
 const VERTICAL_TOLERANCE = 100;
 
 /** Maximum swipe duration (ms) to count as a quick swipe */
-const SWIPE_MAX_DURATION = 300;
+const SWIPE_MAX_DURATION = 500;
+
+/** Minimum swipe velocity (px/ms) - allows slower but longer swipes */
+const MIN_VELOCITY = 0.15;
 
 interface TouchState {
   startX: number;
@@ -84,11 +87,19 @@ export function useSwipeNavigation() {
       // Reset state
       touchStateRef.current = null;
 
+      // Calculate velocity (px/ms)
+      const velocity = duration > 0 ? Math.abs(deltaX) / duration : 0;
+
       // Check if this qualifies as a horizontal swipe
+      // Either: fast swipe within time limit, OR slower swipe with sufficient velocity
+      const isHorizontalEnough = Math.abs(deltaY) < VERTICAL_TOLERANCE;
+      const isFastSwipe =
+        Math.abs(deltaX) > SWIPE_THRESHOLD && duration < SWIPE_MAX_DURATION;
+      const isVelocitySwipe =
+        Math.abs(deltaX) > SWIPE_THRESHOLD && velocity > MIN_VELOCITY;
+
       const isHorizontalSwipe =
-        Math.abs(deltaX) > SWIPE_THRESHOLD &&
-        Math.abs(deltaY) < VERTICAL_TOLERANCE &&
-        duration < SWIPE_MAX_DURATION;
+        isHorizontalEnough && (isFastSwipe || isVelocitySwipe);
 
       if (!isHorizontalSwipe) return;
 

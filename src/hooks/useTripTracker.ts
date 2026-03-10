@@ -64,6 +64,9 @@ export function useTripTracker(
   // ─── Trip Recovery ────────────────────────────────────────────────────────────
   // On mount, check for any in-progress trip that wasn't properly ended
   // (e.g., app was killed while tracking). Restore state from IndexedDB.
+  //
+  // IMPORTANT: Trips older than 24 hours are considered stale and auto-discarded
+  // to prevent phantom trips from persisting indefinitely.
   useEffect(() => {
     if (recoveryAttemptedRef.current) return;
     recoveryAttemptedRef.current = true;
@@ -71,6 +74,22 @@ export function useTripTracker(
     void (async () => {
       const inProgressTrip = await findInProgressTrip();
       if (inProgressTrip?.id === undefined) return;
+
+      // Check if the trip is stale (started more than 24 hours ago)
+      const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+      const tripAge = Date.now() - inProgressTrip.startedAt.getTime();
+
+      if (tripAge > STALE_THRESHOLD_MS) {
+        console.info(
+          `[TripTracker] Auto-discarding stale in-progress trip #${String(inProgressTrip.id)} (started ${String(Math.round(tripAge / 3600000))}h ago)`,
+        );
+        await db.trips.update(inProgressTrip.id, {
+          status: "discarded",
+          endedAt: new Date(),
+          updatedAt: new Date(),
+        });
+        return;
+      }
 
       // Load existing breadcrumbs from locationSamples
       const samples = await db.locationSamples

@@ -38,6 +38,10 @@ export function useGeofence({
   const onEventRef = useRef(onEvent);
   const pendingInsideRef = useRef<Set<number> | null>(null);
 
+  // Track whether we've received the first coordinate - prevents spurious
+  // exit events on app startup before we know the user's initial position
+  const isInitializedRef = useRef(false);
+
   // Keep callback ref stable
   useEffect(() => {
     onEventRef.current = onEvent;
@@ -58,6 +62,23 @@ export function useGeofence({
     }
 
     const prev = prevInsideRef.current;
+
+    // On first coordinate, just initialize state without firing events.
+    // This prevents spurious enter/exit events on app startup before we
+    // have a baseline of which zones the user is actually in.
+    if (!isInitializedRef.current) {
+      isInitializedRef.current = true;
+      prevInsideRef.current = currentInside;
+      // Store pending update — applied in the microtask flush below
+      pendingInsideRef.current = currentInside;
+      queueMicrotask(() => {
+        if (pendingInsideRef.current !== null) {
+          setInsideZones(pendingInsideRef.current);
+          pendingInsideRef.current = null;
+        }
+      });
+      return;
+    }
 
     // Detect exits
     for (const zoneId of prev) {

@@ -911,7 +911,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Dim overlay — covers full viewport while tracking with screen dim on */}
+      {/* Dim overlay — covers viewport above nav bar while tracking with screen dim on */}
       {isDimmed && isTracking && (
         <div
           role="button"
@@ -919,7 +919,10 @@ export function DashboardPage() {
           onClick={handleDimTap}
           style={{
             position: "fixed",
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: "calc(80px + env(safe-area-inset-bottom, 0px))", // Leave room for bottom nav
             zIndex: 9999,
             backgroundColor: `rgba(0,0,0,${String(settings?.dimLevel ?? 0.85)})`,
             cursor: "pointer",

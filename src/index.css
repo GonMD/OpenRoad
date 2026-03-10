@@ -593,6 +593,8 @@
     font-weight: 500;
     letter-spacing: 0.03em;
     transition: color 0.15s;
+    touch-action: manipulation; /* Improve tap responsiveness */
+    user-select: none; /* Prevent text selection on tap */
   }
   .md-nav-item > span {
     max-width: 100%;
